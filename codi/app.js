@@ -1,50 +1,117 @@
 import Anthropic from "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@1.2.0/+esm";
 
 const MODEL = "claude-opus-5-5";
-const SEOUL = { lat: 37.5665, lon: 126.978, name: "서울" };
+const BUSAN = { name: "부산", admin: "부산광역시", lat: 35.1796, lon: 129.0756 };
 const CATEGORIES = ["상의", "하의", "아우터", "원피스", "신발", "가방", "액세서리", "기타"];
+const DAY_COUNT = 10;
 
-/* ---------------- storage (IndexedDB) ---------------- */
+/* ================= storage ================= */
 const dbPromise = new Promise((resolve, reject) => {
-  const req = indexedDB.open("codi", 1);
+  const req = indexedDB.open("codi", 2);
   req.onupgradeneeded = () => {
-    const db = req.result;
-    db.createObjectStore("items", { keyPath: "id" });
-    db.createObjectStore("history", { keyPath: "id" });
+    const d = req.result;
+    for (const name of ["items", "history", "trips"]) {
+      if (!d.objectStoreNames.contains(name)) d.createObjectStore(name, { keyPath: "id" });
+    }
   };
   req.onsuccess = () => resolve(req.result);
   req.onerror = () => reject(req.error);
 });
-async function store(name, mode = "readonly") {
-  const db = await dbPromise;
-  return db.transaction(name, mode).objectStore(name);
-}
 const wrap = (req) => new Promise((res, rej) => { req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error); });
+async function store(name, mode = "readonly") { return (await dbPromise).transaction(name, mode).objectStore(name); }
 const db = {
-  all: async (name) => wrap((await store(name)).getAll()),
-  put: async (name, value) => wrap((await store(name, "readwrite")).put(value)),
-  del: async (name, id) => wrap((await store(name, "readwrite")).delete(id)),
+  all: async (n) => wrap((await store(n)).getAll()),
+  put: async (n, v) => wrap((await store(n, "readwrite")).put(v)),
+  del: async (n, id) => wrap((await store(n, "readwrite")).delete(id)),
 };
 
+function lsGet(k, fallback) { try { const v = localStorage.getItem(k); return v === null ? fallback : JSON.parse(v); } catch { return fallback; } }
+function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
 const settings = {
-  get key() { try { return localStorage.getItem("codi.key") || ""; } catch { return ""; } },
-  set key(v) { try { localStorage.setItem("codi.key", v); } catch {} },
-  get profile() { try { return localStorage.getItem("codi.profile") || ""; } catch { return ""; } },
-  set profile(v) { try { localStorage.setItem("codi.profile", v); } catch {} },
+  get key() { return lsGet("codi.apikey", ""); }, set key(v) { lsSet("codi.apikey", v); },
+  get profile() { return lsGet("codi.profile2", ""); }, set profile(v) { lsSet("codi.profile2", v); },
+  get useGps() { return lsGet("codi.useGps", true); }, set useGps(v) { lsSet("codi.useGps", v); },
+  get homeCity() { return lsGet("codi.homeCity", BUSAN); }, set homeCity(v) { lsSet("codi.homeCity", v); },
 };
+// migrate keys from the first version
+try {
+  const oldKey = localStorage.getItem("codi.key");
+  if (oldKey && !settings.key) settings.key = oldKey;
+  const oldProfile = localStorage.getItem("codi.profile");
+  if (oldProfile && !settings.profile) settings.profile = oldProfile;
+} catch {}
 
+/* ================= utils ================= */
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 function setStatus(el, msg, isError = false) { el.textContent = msg; el.classList.toggle("error", isError); }
+const ymd = (d) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(d);
+const todayStr = () => ymd(new Date());
+function addDays(dateStr, n) { const d = new Date(dateStr + "T12:00:00+09:00"); d.setDate(d.getDate() + n); return ymd(d); }
+const WEEK = ["일", "월", "화", "수", "목", "금", "토"];
+const dow = (dateStr) => WEEK[new Date(dateStr + "T12:00:00+09:00").getDay()];
+const md = (dateStr) => `${+dateStr.slice(5, 7)}/${+dateStr.slice(8, 10)}`;
 
-/* ---------------- Claude ---------------- */
+/* ================= theme ================= */
+const root = document.documentElement;
+const mq = matchMedia("(prefers-color-scheme: dark)");
+const getThemeMode = () => { try { return localStorage.getItem("codi.theme") || "system"; } catch { return "system"; } };
+const isDark = () => root.dataset.theme ? root.dataset.theme === "dark" : mq.matches;
+function syncThemeUI() {
+  root.classList.toggle("is-dark", isDark());
+  document.querySelector('meta[name="theme-color"]').content = isDark() ? "#000000" : "#f7f7f7";
+  document.querySelectorAll("#theme-seg button").forEach((b) => b.classList.toggle("on", b.dataset.mode === getThemeMode()));
+}
+function applyTheme(mode, origin) {
+  const doApply = () => {
+    try { localStorage.setItem("codi.theme", mode); } catch {}
+    if (mode === "system") delete root.dataset.theme; else root.dataset.theme = mode;
+    syncThemeUI();
+  };
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reduce) return doApply();
+  if (document.startViewTransition) {
+    const x = origin?.x ?? innerWidth / 2, y = origin?.y ?? 0;
+    const r = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+    const t = document.startViewTransition(doApply);
+    t.ready.then(() => {
+      root.animate(
+        { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${r}px at ${x}px ${y}px)`] },
+        { duration: 550, easing: "cubic-bezier(.4,0,.2,1)", pseudoElement: "::view-transition-new(root)" },
+      );
+    }).catch(() => {});
+  } else {
+    root.classList.add("theme-fade");
+    doApply();
+    setTimeout(() => root.classList.remove("theme-fade"), 400);
+  }
+}
+$("#theme-btn").addEventListener("click", (e) => {
+  const r = e.currentTarget.getBoundingClientRect();
+  applyTheme(isDark() ? "light" : "dark", { x: r.left + r.width / 2, y: r.top + r.height / 2 });
+});
+$("#theme-seg").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-mode]");
+  if (!b) return;
+  const r = b.getBoundingClientRect();
+  applyTheme(b.dataset.mode, { x: r.left + r.width / 2, y: r.top + r.height / 2 });
+});
+mq.addEventListener("change", () => {
+  if (getThemeMode() !== "system") return;
+  root.classList.add("theme-fade");
+  syncThemeUI();
+  setTimeout(() => root.classList.remove("theme-fade"), 400);
+});
+syncThemeUI();
+
+/* ================= Claude ================= */
 function client() {
   if (!settings.key) throw new Error("설정 탭에서 Anthropic API 키를 먼저 입력해 주세요.");
   return new Anthropic({ apiKey: settings.key, dangerouslyAllowBrowser: true });
 }
 
-// Calls Claude with structured JSON output; handles pause_turn (web search) and refusals.
+// Structured JSON output; handles pause_turn (web search) and refusals.
 async function askJSON({ system, content, schema, effort = "medium", tools }) {
   const c = client();
   const messages = [{ role: "user", content }];
@@ -59,14 +126,10 @@ async function askJSON({ system, content, schema, effort = "medium", tools }) {
       tools,
       output_config: { effort, format: { type: "json_schema", schema } },
     });
-    if (res.stop_reason === "pause_turn") {
-      messages.push({ role: "assistant", content: res.content });
-      continue;
-    }
+    if (res.stop_reason === "pause_turn") { messages.push({ role: "assistant", content: res.content }); continue; }
     if (res.stop_reason === "refusal") throw new Error("AI가 이 요청을 처리하지 못했어요. 다른 사진/요청으로 다시 시도해 주세요.");
     if (res.stop_reason === "max_tokens") throw new Error("응답이 너무 길어 잘렸어요. 다시 시도해 주세요.");
-    const text = res.content.filter((b) => b.type === "text").map((b) => b.text).join("");
-    return JSON.parse(text);
+    return JSON.parse(res.content.filter((b) => b.type === "text").map((b) => b.text).join(""));
   }
   throw new Error("응답을 완료하지 못했어요. 다시 시도해 주세요.");
 }
@@ -79,7 +142,166 @@ function friendlyError(e) {
   return e?.message || String(e);
 }
 
-/* ---------------- image helpers ---------------- */
+/* ================= location ================= */
+async function geocode(query) {
+  const url = new URL("https://geocoding-api.open-meteo.com/v1/search");
+  url.search = new URLSearchParams({ name: query, count: "6", language: "ko", format: "json" }).toString();
+  const r = await fetch(url);
+  if (!r.ok) throw new Error("지역 검색에 실패했어요.");
+  const j = await r.json();
+  return (j.results || []).map((x) => ({ name: x.name, admin: [x.admin1, x.country].filter(Boolean).join(", "), lat: x.latitude, lon: x.longitude }));
+}
+
+let gpsPromise = null;
+function gpsLocation() {
+  gpsPromise ??= new Promise((resolve) => {
+    if (!navigator.geolocation) return resolve(null);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = +pos.coords.latitude.toFixed(4), lon = +pos.coords.longitude.toFixed(4);
+        let name = "현재 위치", admin = "";
+        try {
+          const r = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=ko`);
+          const j = await r.json();
+          name = j.locality || j.city || name;
+          admin = j.city && j.city !== name ? j.city : j.principalSubdivision || "";
+        } catch {}
+        resolve({ name, admin, lat, lon, gps: true });
+      },
+      () => resolve(null),
+      { timeout: 10000, maximumAge: 30 * 60 * 1000 },
+    );
+  });
+  return gpsPromise;
+}
+
+async function baseLocation() {
+  if (settings.useGps) {
+    const g = await gpsLocation();
+    if (g) return g;
+  }
+  return settings.homeCity;
+}
+
+let trips = [];
+const tripFor = (date) => trips.find((t) => t.start <= date && date <= t.end);
+
+async function locationFor(date) {
+  const t = tripFor(date);
+  return t ? { ...t.city, trip: t } : await baseLocation();
+}
+
+/* ================= weather ================= */
+const WMO = {
+  0: ["맑음", "☀️"], 1: ["대체로 맑음", "🌤️"], 2: ["구름 조금", "⛅"], 3: ["흐림", "☁️"],
+  45: ["안개", "🌫️"], 48: ["안개", "🌫️"], 51: ["이슬비", "🌦️"], 53: ["이슬비", "🌦️"], 55: ["이슬비", "🌦️"],
+  61: ["비", "🌧️"], 63: ["비", "🌧️"], 65: ["강한 비", "🌧️"], 66: ["어는 비", "🌧️"], 67: ["어는 비", "🌧️"],
+  71: ["눈", "🌨️"], 73: ["눈", "🌨️"], 75: ["많은 눈", "❄️"], 77: ["싸락눈", "🌨️"],
+  80: ["소나기", "🌦️"], 81: ["소나기", "🌧️"], 82: ["강한 소나기", "⛈️"], 85: ["눈 소나기", "🌨️"], 86: ["눈 소나기", "🌨️"],
+  95: ["뇌우", "⛈️"], 96: ["뇌우", "⛈️"], 99: ["뇌우", "⛈️"],
+};
+const forecastCache = new Map();
+
+function forecast(loc) {
+  const key = `${loc.lat},${loc.lon}`;
+  if (!forecastCache.has(key)) {
+    const p = (async () => {
+      const url = new URL("https://api.open-meteo.com/v1/forecast");
+      url.search = new URLSearchParams({
+        latitude: loc.lat, longitude: loc.lon, timezone: "auto", forecast_days: "16",
+        daily: "weather_code,temperature_2m_max,temperature_2m_min,apparent_temperature_max,apparent_temperature_min,precipitation_probability_max,wind_speed_10m_max,uv_index_max",
+        hourly: "temperature_2m",
+      }).toString();
+      const r = await fetch(url);
+      if (!r.ok) throw new Error("날씨 정보를 불러오지 못했어요.");
+      const j = await r.json();
+      const d = j.daily;
+      const byDate = {};
+      d.time.forEach((date, i) => {
+        const at = (h) => { const k = j.hourly.time.indexOf(`${date}T${h}:00`); return k >= 0 ? j.hourly.temperature_2m[k] : null; };
+        const [desc, icon] = WMO[d.weather_code[i]] || ["알 수 없음", "🌡️"];
+        byDate[date] = {
+          date, desc, icon,
+          max: d.temperature_2m_max[i], min: d.temperature_2m_min[i],
+          feelsMax: d.apparent_temperature_max[i], feelsMin: d.apparent_temperature_min[i],
+          rain: d.precipitation_probability_max[i], wind: d.wind_speed_10m_max[i], uv: d.uv_index_max[i],
+          morning: at("08"), afternoon: at("14"), evening: at("20"),
+        };
+      });
+      return byDate;
+    })();
+    p.catch(() => forecastCache.delete(key));
+    forecastCache.set(key, p);
+  }
+  return forecastCache.get(key);
+}
+
+let selectedDate = todayStr();
+let current = null; // { date, loc, w }
+
+function renderDayChips() {
+  const t = todayStr();
+  $("#day-chips").innerHTML = Array.from({ length: DAY_COUNT }, (_, i) => {
+    const d = addDays(t, i);
+    const label = i === 0 ? "오늘" : i === 1 ? "내일" : dow(d);
+    return `<button data-date="${d}" class="${d === selectedDate ? "on" : ""} ${tripFor(d) ? "trip" : ""}">
+      <span class="d">${label}</span><span class="n">${+d.slice(8, 10)}</span><span class="dot"></span></button>`;
+  }).join("");
+}
+$("#day-chips").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-date]");
+  if (!b) return;
+  selectedDate = b.dataset.date;
+  renderDayChips();
+  loadWeather();
+});
+
+const r0 = (n) => (n == null ? "–" : Math.round(n));
+let weatherReq = 0;
+async function loadWeather() {
+  const req = ++weatherReq;
+  const card = $("#weather-card");
+  card.innerHTML = `<div class="skeleton">날씨 불러오는 중…</div>`;
+  current = null;
+  try {
+    const date = selectedDate;
+    const loc = await locationFor(date);
+    const w = (await forecast(loc))[date];
+    if (req !== weatherReq) return;
+    if (!w) throw new Error("해당 날짜 예보가 아직 없어요.");
+    current = { date, loc, w };
+    card.innerHTML = `
+      <div class="w-top">
+        <div>
+          <div class="w-loc">
+            <svg viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
+            ${esc(loc.name)}${loc.admin ? `<span class="muted small">&nbsp;${esc(loc.admin)}</span>` : ""}
+          </div>
+          <div class="w-desc">${md(date)} (${dow(date)}) · ${esc(w.desc)} · 강수 ${w.rain ?? 0}%</div>
+        </div>
+        <div class="w-icon">${w.icon}</div>
+      </div>
+      <div class="w-temp">${r0(w.max)}°<small> / ${r0(w.min)}°</small></div>
+      <div class="w-desc">체감 ${r0(w.feelsMin)}° ~ ${r0(w.feelsMax)}°</div>
+      ${loc.trip ? `<span class="trip-badge">✈ 일정${loc.trip.memo ? ` · ${esc(loc.trip.memo)}` : ""}</span>` : ""}
+      <div class="w-hours">
+        <div><span>아침</span><b>${r0(w.morning)}°</b></div>
+        <div><span>낮</span><b>${r0(w.afternoon)}°</b></div>
+        <div><span>저녁</span><b>${r0(w.evening)}°</b></div>
+        <div><span>바람</span><b>${r0(w.wind)}</b></div>
+      </div>`;
+  } catch (err) {
+    if (req !== weatherReq) return;
+    card.innerHTML = `<p class="status error">${esc(err.message)}</p>`;
+  }
+}
+
+function weatherText({ loc, w }) {
+  return `${loc.name}${loc.admin ? ` (${loc.admin})` : ""} ${w.date}: ${w.desc}, 최저 ${w.min}°C / 최고 ${w.max}°C (체감 ${w.feelsMin}~${w.feelsMax}°C), ` +
+    `아침8시 ${w.morning}°C, 오후2시 ${w.afternoon}°C, 저녁8시 ${w.evening}°C, 강수확률 ${w.rain}%, 최대풍속 ${w.wind}km/h, 자외선지수 ${w.uv}`;
+}
+
+/* ================= images ================= */
 async function resizeImage(file, max = 900) {
   const bitmap = await createImageBitmap(file);
   const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
@@ -90,7 +312,7 @@ async function resizeImage(file, max = 900) {
   return canvas.toDataURL("image/jpeg", 0.82);
 }
 
-/* ---------------- wardrobe analysis ---------------- */
+/* ================= wardrobe ================= */
 const ITEM_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -121,12 +343,11 @@ const ITEM_SCHEMA = {
 };
 
 async function analyzePhoto(dataUrl) {
-  const data = dataUrl.split(",")[1];
   const out = await askJSON({
     effort: "low",
     system: "당신은 패션 스타일리스트입니다. 사진 속 의류/신발/가방/액세서리를 옷장 데이터베이스용으로 정확히 분류합니다. 한국어로 답하세요. 사진에 사람이 입고 있으면 착용한 아이템 각각을 따로 항목으로 만듭니다. 의류가 없으면 빈 배열을 반환하세요.",
     content: [
-      { type: "image", source: { type: "base64", media_type: "image/jpeg", data } },
+      { type: "image", source: { type: "base64", media_type: "image/jpeg", data: dataUrl.split(",")[1] } },
       { type: "text", text: "이 사진 속 아이템들을 분석해 주세요." },
     ],
     schema: ITEM_SCHEMA,
@@ -134,67 +355,9 @@ async function analyzePhoto(dataUrl) {
   return out.items;
 }
 
-/* ---------------- weather (Open-Meteo, no key) ---------------- */
-const WMO = {
-  0: ["맑음", "☀️"], 1: ["대체로 맑음", "🌤️"], 2: ["구름 조금", "⛅"], 3: ["흐림", "☁️"],
-  45: ["안개", "🌫️"], 48: ["안개", "🌫️"], 51: ["이슬비", "🌦️"], 53: ["이슬비", "🌦️"], 55: ["이슬비", "🌦️"],
-  61: ["비", "🌧️"], 63: ["비", "🌧️"], 65: ["강한 비", "🌧️"], 66: ["어는 비", "🌧️"], 67: ["어는 비", "🌧️"],
-  71: ["눈", "🌨️"], 73: ["눈", "🌨️"], 75: ["많은 눈", "❄️"], 77: ["싸락눈", "🌨️"],
-  80: ["소나기", "🌦️"], 81: ["소나기", "🌧️"], 82: ["강한 소나기", "⛈️"], 85: ["눈 소나기", "🌨️"], 86: ["눈 소나기", "🌨️"],
-  95: ["뇌우", "⛈️"], 96: ["뇌우", "⛈️"], 99: ["뇌우", "⛈️"],
-};
-let weatherDays = [];
-
-async function loadWeather() {
-  const url = new URL("https://api.open-meteo.com/v1/forecast");
-  url.search = new URLSearchParams({
-    latitude: SEOUL.lat, longitude: SEOUL.lon, timezone: "Asia/Seoul", forecast_days: "2",
-    daily: "weather_code,temperature_2m_max,temperature_2m_min,apparent_temperature_max,apparent_temperature_min,precipitation_probability_max,wind_speed_10m_max,uv_index_max",
-    hourly: "temperature_2m",
-  }).toString();
-  const r = await fetch(url);
-  if (!r.ok) throw new Error("날씨 정보를 불러오지 못했어요.");
-  const j = await r.json();
-  const d = j.daily;
-  weatherDays = d.time.map((date, i) => {
-    const hours = j.hourly.time.map((t, k) => [t, j.hourly.temperature_2m[k]]).filter(([t]) => t.startsWith(date));
-    const at = (h) => hours.find(([t]) => t.endsWith(`T${h}:00`))?.[1];
-    const [desc, icon] = WMO[d.weather_code[i]] || ["알 수 없음", "🌡️"];
-    return {
-      date, desc, icon,
-      max: d.temperature_2m_max[i], min: d.temperature_2m_min[i],
-      feelsMax: d.apparent_temperature_max[i], feelsMin: d.apparent_temperature_min[i],
-      rain: d.precipitation_probability_max[i], wind: d.wind_speed_10m_max[i], uv: d.uv_index_max[i],
-      morning: at("08"), afternoon: at("14"), evening: at("20"),
-    };
-  });
-  renderWeather();
-}
-
-function weatherText(w) {
-  return `${SEOUL.name} ${w.date}: ${w.desc}, 최저 ${w.min}°C / 최고 ${w.max}°C (체감 ${w.feelsMin}~${w.feelsMax}°C), ` +
-    `아침8시 ${w.morning}°C, 오후2시 ${w.afternoon}°C, 저녁8시 ${w.evening}°C, 강수확률 ${w.rain}%, 최대풍속 ${w.wind}km/h, 자외선지수 ${w.uv}`;
-}
-
-function renderWeather() {
-  const w = weatherDays[+$("#day-select").value];
-  if (!w) return;
-  $("#weather-chip").textContent = `${w.icon} ${Math.round(w.min)}° / ${Math.round(w.max)}°`;
-  $("#weather-card").innerHTML = `
-    <div class="weather">
-      <div class="icon">${w.icon}</div>
-      <div>
-        <div class="temp">${Math.round(w.min)}° / ${Math.round(w.max)}°</div>
-        <div class="meta">${SEOUL.name} · ${esc(w.desc)} · 체감 ${Math.round(w.feelsMin)}~${Math.round(w.feelsMax)}°</div>
-        <div class="meta">아침 ${Math.round(w.morning)}° · 낮 ${Math.round(w.afternoon)}° · 저녁 ${Math.round(w.evening)}° · 강수 ${w.rain}%</div>
-      </div>
-    </div>`;
-}
-
-/* ---------------- closet UI ---------------- */
 let items = [];
 let filter = "전체";
-const pending = []; // placeholders while analyzing
+const pending = [];
 
 async function refreshItems() {
   items = (await db.all("items")).sort((a, b) => b.createdAt - a.createdAt);
@@ -203,9 +366,9 @@ async function refreshItems() {
 
 function renderCloset() {
   const cats = ["전체", ...CATEGORIES.filter((c) => items.some((i) => i.category === c))];
-  $("#closet-filters").innerHTML = cats
-    .map((c) => `<button class="${c === filter ? "on" : ""}" data-cat="${c}">${c} ${c === "전체" ? items.length : items.filter((i) => i.category === c).length}</button>`)
-    .join("");
+  $("#closet-filters").innerHTML = items.length
+    ? cats.map((c) => `<button class="${c === filter ? "on" : ""}" data-cat="${c}">${c} ${c === "전체" ? items.length : items.filter((i) => i.category === c).length}</button>`).join("")
+    : "";
   const shown = filter === "전체" ? items : items.filter((i) => i.category === filter);
   $("#closet-grid").innerHTML =
     pending.map((p) => `<div class="item pending"><img src="${p.image}" alt="" /><div class="label">분석 중…</div></div>`).join("") +
@@ -227,7 +390,7 @@ $("#photo-input").addEventListener("change", async (e) => {
   const status = $("#upload-status");
   try { client(); } catch (err) { setStatus(status, err.message, true); return; }
 
-  let done = 0, added = 0, failed = 0;
+  let done = 0, added = 0, failed = 0, lastErr = "";
   setStatus(status, `${files.length}장 분석 중…`);
   const queue = files.slice();
   const worker = async () => {
@@ -237,28 +400,26 @@ $("#photo-input").addEventListener("change", async (e) => {
       pending.push(p);
       renderCloset();
       try {
-        const found = await analyzePhoto(p.image);
-        for (const it of found) {
+        for (const it of await analyzePhoto(p.image)) {
           await db.put("items", { ...it, id: uid(), image: p.image, createdAt: Date.now() });
           added++;
         }
       } catch (err) {
         failed++;
+        lastErr = friendlyError(err);
         console.error(err);
-        setStatus(status, friendlyError(err), true);
       } finally {
         pending.splice(pending.indexOf(p), 1);
         done++;
         await refreshItems();
-        if (!failed) setStatus(status, `${done}/${files.length}장 완료 · ${added}개 아이템 등록`);
+        setStatus(status, `${done}/${files.length}장 · ${added}개 등록${failed ? ` · ${failed}장 실패` : ""}`);
       }
     }
   };
   await Promise.all([worker(), worker(), worker()]);
-  setStatus(status, `완료: ${added}개 아이템 등록${failed ? ` · ${failed}장 실패` : ""}`, failed > 0);
+  setStatus(status, `완료: ${added}개 아이템 등록${failed ? `\n${failed}장 실패 — ${lastErr}` : ""}`, failed > 0);
 });
 
-// edit dialog
 const dialog = $("#item-dialog");
 const form = $("#item-form");
 form.category.innerHTML = CATEGORIES.map((c) => `<option>${c}</option>`).join("");
@@ -299,13 +460,13 @@ dialog.addEventListener("close", async () => {
   refreshItems();
 });
 
-/* ---------------- recommendation ---------------- */
+/* ================= recommendation ================= */
 const OUTFIT_SCHEMA = {
   type: "object",
   additionalProperties: false,
   required: ["weather_advice", "outfits", "missing_items", "trend_notes"],
   properties: {
-    weather_advice: { type: "string", description: "오늘 날씨에 맞는 옷차림 요령 한두 문장" },
+    weather_advice: { type: "string", description: "그날 날씨에 맞는 옷차림 요령 한두 문장" },
     outfits: {
       type: "array",
       description: "추천 코디 2~3개, 가장 추천하는 것부터",
@@ -335,21 +496,28 @@ const OUTFIT_SCHEMA = {
   },
 };
 
+let occasion = "출근/학교";
+$("#occasion-seg").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  occasion = b.textContent.trim();
+  document.querySelectorAll("#occasion-seg button").forEach((x) => x.classList.toggle("on", x === b));
+});
+
 let lastResult = null;
 
 async function recentlyWorn() {
-  const hist = (await db.all("history")).sort((a, b) => b.createdAt - a.createdAt);
   const weekAgo = Date.now() - 7 * 864e5;
-  return hist.filter((h) => h.createdAt > weekAgo).map((h) => ({ date: h.date, item_ids: h.item_ids }));
+  return (await db.all("history")).filter((h) => h.createdAt > weekAgo).map((h) => ({ date: h.date, item_ids: h.item_ids }));
 }
 
 $("#recommend-btn").addEventListener("click", async () => {
   const btn = $("#recommend-btn");
   const status = $("#recommend-status");
-  const w = weatherDays[+$("#day-select").value];
   if (!items.length) { setStatus(status, "옷장 탭에서 옷 사진부터 추가해 주세요.", true); return; }
-  if (!w) { setStatus(status, "날씨 정보가 아직 없어요. 잠시 후 다시 시도해 주세요.", true); return; }
+  if (!current) { setStatus(status, "날씨 정보가 아직 없어요. 잠시 후 다시 시도해 주세요.", true); return; }
 
+  const ctx = current;
   const useSearch = $("#use-search").checked;
   btn.disabled = true;
   setStatus(status, useSearch ? "트렌드 검색하고 코디 짜는 중… (1분 정도 걸릴 수 있어요)" : "코디 짜는 중…");
@@ -357,12 +525,13 @@ $("#recommend-btn").addEventListener("click", async () => {
 
   const wardrobe = items.map(({ image, createdAt, ...rest }) => rest);
   const worn = await recentlyWorn();
-  const occasion = $("#occasion").value;
   const note = $("#request-note").value.trim();
+  const trip = ctx.loc.trip;
 
   const prompt = [
-    `## 날씨\n${weatherText(w)}`,
+    `## 날씨\n${weatherText(ctx)}`,
     `## 상황\n${occasion}`,
+    trip && `## 일정\n${trip.city.name} 출장/여행 (${trip.start} ~ ${trip.end})${trip.memo ? ` — ${trip.memo}` : ""}. 이동이 있으면 편하게, 일정 성격에 맞게 코디하세요.`,
     note && `## 추가 요청\n${note}`,
     settings.profile && `## 사용자 정보\n${settings.profile}`,
     `## 최근 7일 착용 기록 (가능하면 같은 조합 반복 피하기)\n${worn.length ? JSON.stringify(worn) : "없음"}`,
@@ -382,7 +551,7 @@ $("#recommend-btn").addEventListener("click", async () => {
       schema: OUTFIT_SCHEMA,
       tools: useSearch ? [{ type: "web_search_20260209", name: "web_search", max_uses: 3 }] : undefined,
     });
-    lastResult = { ...result, date: w.date, occasion };
+    lastResult = { ...result, date: ctx.date, occasion, place: ctx.loc.name };
     renderResult(lastResult);
     setStatus(status, "");
   } catch (err) {
@@ -402,44 +571,108 @@ function itemFigures(ids) {
 }
 
 function renderResult(r) {
-  const outfits = r.outfits
-    .map((o, idx) => `
-      <div class="card outfit">
-        <h3><span>${idx === 0 ? "⭐ " : ""}${esc(o.title)}</span></h3>
-        <div class="outfit-items">${itemFigures(o.item_ids)}</div>
-        <p>${esc(o.reason)}</p>
-        <p class="tip">💡 ${esc(o.styling_tip)}</p>
-        <button class="primary" data-wear="${idx}">이걸로 입을게</button>
-      </div>`)
-    .join("");
+  const outfits = r.outfits.map((o, idx) => `
+    <div class="card outfit">
+      <div class="rank">${idx === 0 ? "BEST PICK" : `OPTION ${idx + 1}`}</div>
+      <h3>${esc(o.title)}</h3>
+      <div class="outfit-items">${itemFigures(o.item_ids)}</div>
+      <p>${esc(o.reason)}</p>
+      <p class="tip">${esc(o.styling_tip)}</p>
+      <button class="${idx === 0 ? "primary" : ""} wide" data-wear="${idx}">이걸로 입을게</button>
+    </div>`).join("");
   const missing = r.missing_items.length
     ? `<div class="card"><h3>있으면 좋은 아이템</h3><ul class="missing">${r.missing_items.map((m) => `<li><b>${esc(m.item)}</b> — ${esc(m.why)}</li>`).join("")}</ul></div>`
     : "";
   const trend = r.trend_notes ? `<div class="card"><h3>요즘 트렌드</h3><p>${esc(r.trend_notes)}</p></div>` : "";
-  $("#recommend-result").innerHTML = `<div class="card"><p>🌡️ ${esc(r.weather_advice)}</p></div>${outfits}${trend}${missing}`;
+  $("#recommend-result").innerHTML = `<div class="card"><p class="advice">${esc(r.weather_advice)}</p></div>${outfits}${trend}${missing}`;
 }
 
 $("#recommend-result").addEventListener("click", async (e) => {
   const b = e.target.closest("button[data-wear]");
   if (!b || !lastResult) return;
   const o = lastResult.outfits[+b.dataset.wear];
-  await db.put("history", { id: uid(), createdAt: Date.now(), date: lastResult.date, occasion: lastResult.occasion, title: o.title, item_ids: o.item_ids });
+  await db.put("history", { id: uid(), createdAt: Date.now(), date: lastResult.date, occasion: lastResult.occasion, place: lastResult.place, title: o.title, item_ids: o.item_ids });
   b.textContent = "기록했어요 ✓";
   b.disabled = true;
   renderHistory();
 });
 
-/* ---------------- history ---------------- */
+/* ================= trips ================= */
+function cityResults(container, list, onPick) {
+  container.innerHTML = list.length
+    ? list.map((c, i) => `<button data-i="${i}">${esc(c.name)}<small>${esc(c.admin)}</small></button>`).join("")
+    : `<p class="muted small">검색 결과가 없어요. 영문으로도 검색해 보세요 (예: Busan).</p>`;
+  container.onclick = (e) => {
+    const b = e.target.closest("button[data-i]");
+    if (!b) return;
+    container.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+    onPick(list[+b.dataset.i]);
+  };
+}
+
+let tripCity = null;
+async function searchTripCity() {
+  const q = $("#trip-city").value.trim();
+  if (!q) return;
+  tripCity = null;
+  try {
+    const list = await geocode(q);
+    cityResults($("#trip-city-results"), list, (c) => { tripCity = c; });
+    if (list.length === 1) { tripCity = list[0]; $("#trip-city-results button").classList.add("on"); }
+  } catch (err) { setStatus($("#trip-status"), err.message, true); }
+}
+$("#trip-search").addEventListener("click", searchTripCity);
+$("#trip-city").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); searchTripCity(); } });
+
+$("#trip-start").addEventListener("change", () => {
+  if (!$("#trip-end").value || $("#trip-end").value < $("#trip-start").value) $("#trip-end").value = $("#trip-start").value;
+});
+
+$("#trip-add").addEventListener("click", async () => {
+  const status = $("#trip-status");
+  const start = $("#trip-start").value, end = $("#trip-end").value || start;
+  if (!tripCity) return setStatus(status, "도시를 검색해서 선택해 주세요.", true);
+  if (!start) return setStatus(status, "날짜를 선택해 주세요.", true);
+  if (end < start) return setStatus(status, "종료일이 시작일보다 빨라요.", true);
+  await db.put("trips", { id: uid(), city: tripCity, start, end, memo: $("#trip-memo").value.trim(), createdAt: Date.now() });
+  tripCity = null;
+  $("#trip-city").value = $("#trip-memo").value = $("#trip-start").value = $("#trip-end").value = "";
+  $("#trip-city-results").innerHTML = "";
+  setStatus(status, "일정을 추가했어요.");
+  await refreshTrips();
+});
+
+async function refreshTrips() {
+  trips = (await db.all("trips")).sort((a, b) => a.start.localeCompare(b.start));
+  const t = todayStr();
+  $("#trip-list").innerHTML = trips.map((x) => `
+    <div class="card trip-entry ${x.end < t ? "past" : ""}">
+      <div>
+        <b>${esc(x.city.name)}</b> <span class="muted small">${esc(x.city.admin)}</span>
+        <div class="meta">${md(x.start)}(${dow(x.start)})${x.end !== x.start ? ` – ${md(x.end)}(${dow(x.end)})` : ""}${x.memo ? ` · ${esc(x.memo)}` : ""}</div>
+      </div>
+      <button class="ghost danger" data-del="${x.id}">삭제</button>
+    </div>`).join("");
+  $("#trip-empty").style.display = trips.length ? "none" : "block";
+  renderDayChips();
+  loadWeather();
+}
+$("#trip-list").addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-del]");
+  if (!b) return;
+  await db.del("trips", b.dataset.del);
+  refreshTrips();
+});
+
+/* ================= history ================= */
 async function renderHistory() {
   const hist = (await db.all("history")).sort((a, b) => b.createdAt - a.createdAt);
-  $("#history-list").innerHTML = hist
-    .map((h) => `
-      <div class="card history-entry">
-        <div class="row"><span class="date grow">${esc(h.date)} · ${esc(h.occasion)}</span><button class="danger" data-del="${h.id}">삭제</button></div>
-        <h3>${esc(h.title)}</h3>
-        <div class="outfit-items">${itemFigures(h.item_ids)}</div>
-      </div>`)
-    .join("");
+  $("#history-list").innerHTML = hist.map((h) => `
+    <div class="card history-entry">
+      <div class="row"><span class="date grow">${md(h.date)} (${dow(h.date)}) · ${esc(h.occasion)}${h.place ? ` · ${esc(h.place)}` : ""}</span><button class="ghost danger" data-del="${h.id}">삭제</button></div>
+      <h3>${esc(h.title)}</h3>
+      <div class="outfit-items">${itemFigures(h.item_ids)}</div>
+    </div>`).join("");
   $("#history-empty").style.display = hist.length ? "none" : "block";
 }
 $("#history-list").addEventListener("click", async (e) => {
@@ -449,20 +682,44 @@ $("#history-list").addEventListener("click", async (e) => {
   renderHistory();
 });
 
-/* ---------------- settings & backup ---------------- */
-$("#api-key").value = settings.key;
-$("#profile-note").value = settings.profile;
+/* ================= settings ================= */
+let pendingHome = null;
+function fillSettings() {
+  $("#api-key").value = settings.key;
+  $("#profile-note").value = settings.profile;
+  $("#use-gps").checked = settings.useGps;
+  $("#home-city").value = settings.homeCity.name;
+}
+async function searchHome() {
+  const q = $("#home-city").value.trim();
+  if (!q) return;
+  try {
+    const list = await geocode(q);
+    cityResults($("#home-city-results"), list, (c) => { pendingHome = c; });
+    if (list.length === 1) { pendingHome = list[0]; $("#home-city-results button").classList.add("on"); }
+  } catch (err) { setStatus($("#settings-status"), err.message, true); }
+}
+$("#home-search").addEventListener("click", searchHome);
+$("#home-city").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); searchHome(); } });
+
 $("#save-settings").addEventListener("click", () => {
   settings.key = $("#api-key").value.trim();
   settings.profile = $("#profile-note").value.trim();
+  const gpsChanged = settings.useGps !== $("#use-gps").checked;
+  settings.useGps = $("#use-gps").checked;
+  if (pendingHome) { settings.homeCity = pendingHome; pendingHome = null; }
+  $("#home-city-results").innerHTML = "";
+  fillSettings();
+  if (gpsChanged) gpsPromise = null;
+  loadWeather();
   setStatus($("#settings-status"), "저장했어요.");
 });
 
 $("#export-btn").addEventListener("click", async () => {
-  const data = { version: 1, items: await db.all("items"), history: await db.all("history") };
+  const data = { version: 2, items: await db.all("items"), history: await db.all("history"), trips: await db.all("trips") };
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: "application/json" }));
-  a.download = `codi-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = `codi-backup-${todayStr()}.json`;
   a.click();
   URL.revokeObjectURL(a.href);
 });
@@ -472,9 +729,9 @@ $("#import-input").addEventListener("change", async (e) => {
   if (!file) return;
   try {
     const data = JSON.parse(await file.text());
-    for (const it of data.items || []) await db.put("items", it);
-    for (const h of data.history || []) await db.put("history", h);
+    for (const n of ["items", "history", "trips"]) for (const x of data[n] || []) await db.put(n, x);
     await refreshItems();
+    await refreshTrips();
     renderHistory();
     setStatus($("#settings-status"), `불러오기 완료: 아이템 ${data.items?.length || 0}개`);
   } catch {
@@ -482,20 +739,21 @@ $("#import-input").addEventListener("change", async (e) => {
   }
 });
 
-/* ---------------- tabs & init ---------------- */
+/* ================= tabs & init ================= */
+function showTab(name) {
+  document.querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("active", x.dataset.tab === name));
+  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.id === `tab-${name}`));
+  $("#page-title").textContent = $(`#tab-${name}`).dataset.title;
+  window.scrollTo(0, 0);
+}
 document.querySelector(".tabs").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-tab]");
-  if (!b) return;
-  document.querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("active", x === b));
-  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.id === `tab-${b.dataset.tab}`));
-  window.scrollTo(0, 0);
+  if (b) showTab(b.dataset.tab);
 });
-$("#day-select").addEventListener("change", renderWeather);
 
+fillSettings();
+renderDayChips();
 refreshItems();
 renderHistory();
-loadWeather().catch((err) => {
-  $("#weather-chip").textContent = "날씨 오류";
-  $("#weather-card").innerHTML = `<p class="status error">${esc(err.message)}</p>`;
-});
-if (!settings.key) document.querySelector('.tabs button[data-tab="settings"]').click();
+refreshTrips();
+if (!settings.key) showTab("settings");

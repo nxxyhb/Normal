@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f6f3ee" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="오늘뭐입지" />
+  <title>오늘뭐입지</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icon.svg" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="top">
+    <h1>오늘뭐입지</h1>
+    <span id="weather-chip" class="chip muted">날씨 불러오는 중…</span>
+  </header>
+
+  <main>
+    <!-- 오늘 코디 -->
+    <section id="tab-today" class="tab active">
+      <div class="card" id="weather-card"></div>
+
+      <div class="card">
+        <div class="row">
+          <label class="field grow">
+            <span>언제</span>
+            <select id="day-select">
+              <option value="0">오늘</option>
+              <option value="1">내일</option>
+            </select>
+          </label>
+          <label class="field grow">
+            <span>상황</span>
+            <select id="occasion">
+              <option>출근/학교</option>
+              <option>데이트</option>
+              <option>캐주얼 외출</option>
+              <option>격식 있는 자리</option>
+              <option>운동/활동적</option>
+              <option>집 근처</option>
+            </select>
+          </label>
+        </div>
+        <label class="field">
+          <span>추가 요청 (선택)</span>
+          <input id="request-note" type="text" placeholder="예: 오늘은 좀 꾸민 느낌, 흰 셔츠 꼭 입고 싶음" />
+        </label>
+        <label class="check">
+          <input type="checkbox" id="use-search" />
+          <span>요즘 트렌드 웹 검색해서 반영 (느리고 비용 조금 더)</span>
+        </label>
+        <button id="recommend-btn" class="primary">코디 추천받기</button>
+        <p id="recommend-status" class="status"></p>
+      </div>
+
+      <div id="recommend-result"></div>
+    </section>
+
+    <!-- 옷장 -->
+    <section id="tab-closet" class="tab">
+      <div class="card">
+        <p class="muted small">옷 사진을 올리면 AI가 종류·색·계절·보온성을 자동으로 분석해서 옷장에 저장해요. 한 장에 여러 벌이 있어도 각각 등록돼요.</p>
+        <label class="primary file-btn">
+          사진 추가하기
+          <input id="photo-input" type="file" accept="image/*" multiple hidden />
+        </label>
+        <p id="upload-status" class="status"></p>
+      </div>
+      <div class="filters" id="closet-filters"></div>
+      <div class="grid" id="closet-grid"></div>
+      <p id="closet-empty" class="empty">아직 등록된 옷이 없어요. 사진을 추가해 보세요.</p>
+    </section>
+
+    <!-- 기록 -->
+    <section id="tab-history" class="tab">
+      <div id="history-list"></div>
+      <p id="history-empty" class="empty">"이걸로 입을게"를 누른 코디가 여기 쌓여요. 최근에 입은 옷은 추천할 때 피해서 골라줘요.</p>
+    </section>
+
+    <!-- 설정 -->
+    <section id="tab-settings" class="tab">
+      <div class="card">
+        <label class="field">
+          <span>Anthropic API 키</span>
+          <input id="api-key" type="password" placeholder="sk-ant-..." autocomplete="off" />
+        </label>
+        <p class="muted small">키는 이 기기 브라우저에만 저장되고 Anthropic API로만 전송돼요. <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">여기서 발급</a></p>
+        <label class="field">
+          <span>내 스타일 / 체형 메모 (선택)</span>
+          <textarea id="profile-note" rows="3" placeholder="예: 20대 남성, 미니멀/스트릿 좋아함, 추위 많이 탐"></textarea>
+        </label>
+        <button id="save-settings" class="primary">저장</button>
+        <p id="settings-status" class="status"></p>
+      </div>
+      <div class="card">
+        <h3>데이터</h3>
+        <div class="row">
+          <button id="export-btn">옷장 백업(내보내기)</button>
+          <label class="btn">
+            불러오기
+            <input id="import-input" type="file" accept="application/json" hidden />
+          </label>
+        </div>
+        <p class="muted small">옷장 데이터는 이 기기에만 저장돼요. 기기를 바꿀 땐 백업 파일로 옮기세요.</p>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabs">
+    <button data-tab="today" class="active">오늘 코디</button>
+    <button data-tab="closet">옷장</button>
+    <button data-tab="history">기록</button>
+    <button data-tab="settings">설정</button>
+  </nav>
+
+  <dialog id="item-dialog">
+    <form method="dialog" id="item-form">
+      <img id="item-img" alt="" />
+      <label class="field"><span>이름</span><input name="name" /></label>
+      <div class="row">
+        <label class="field grow"><span>종류</span>
+          <select name="category"></select>
+        </label>
+        <label class="field grow"><span>보온성 (1~5)</span>
+          <input name="warmth" type="number" min="1" max="5" />
+        </label>
+      </div>
+      <label class="field"><span>색상 (쉼표로 구분)</span><input name="colors" /></label>
+      <label class="field"><span>계절 (쉼표로 구분)</span><input name="seasons" /></label>
+      <label class="field"><span>스타일 태그 (쉼표로 구분)</span><input name="style_tags" /></label>
+      <div class="row">
+        <button value="delete" class="danger">삭제</button>
+        <span class="grow"></span>
+        <button value="cancel">취소</button>
+        <button value="save" class="primary">저장</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

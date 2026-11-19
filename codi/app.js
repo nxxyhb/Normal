@@ -302,14 +302,47 @@ function weatherText({ loc, w }) {
 }
 
 /* ================= images ================= */
-async function resizeImage(file, max = 900) {
-  const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
+function drawToDataUrl(src, sx, sy, sw, sh, max) {
+  const scale = Math.min(1, max / Math.max(sw, sh));
   const canvas = document.createElement("canvas");
-  canvas.width = Math.round(bitmap.width * scale);
-  canvas.height = Math.round(bitmap.height * scale);
-  canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/jpeg", 0.82);
+  canvas.width = Math.max(1, Math.round(sw * scale));
+  canvas.height = Math.max(1, Math.round(sh * scale));
+  canvas.getContext("2d").drawImage(src, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.85);
+}
+
+// 일반 사진은 그대로 한 장, 세로로 긴 캡처는 위아래가 조금 겹치게 여러 조각으로 자름
+const SLICE_RATIO = 1.4; // 조각 하나의 세로/가로 비율
+const MAX_SLICES = 24;
+async function sliceImage(file) {
+  const bmp = await createImageBitmap(file);
+  const { width: w, height: h } = bmp;
+  if (h <= w * 2) return [drawToDataUrl(bmp, 0, 0, w, h, 1200)];
+  const sliceH = Math.round(w * SLICE_RATIO);
+  const step = Math.round(sliceH * 0.85);
+  const slices = [];
+  for (let y = 0; y < h && slices.length < MAX_SLICES; y += step) {
+    const sh = Math.min(sliceH, h - y);
+    if (slices.length && sh < sliceH * 0.25) break; // 끝에 남은 얇은 조각은 앞 조각에 이미 겹쳐 있음
+    slices.push(drawToDataUrl(bmp, 0, y, w, sh, 1200));
+    if (y + sh >= h) break;
+  }
+  return slices;
+}
+
+const loadImg = (src) => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
+
+// AI가 알려준 위치(0~1000 비율)로 아이템만 정사각형에 가깝게 잘라 썸네일 생성
+async function cropItem(sliceUrl, b) {
+  const img = await loadImg(sliceUrl);
+  const W = img.naturalWidth, H = img.naturalHeight;
+  const x0 = (b.x0 / 1000) * W, x1 = (b.x1 / 1000) * W, y0 = (b.y0 / 1000) * H, y1 = (b.y1 / 1000) * H;
+  if (!(x1 - x0 > W * 0.05 && y1 - y0 > H * 0.05)) return drawToDataUrl(img, 0, 0, W, H, 900);
+  const side = Math.max(x1 - x0, y1 - y0) * 1.15;
+  const cw = Math.min(side, W), ch = Math.min(side, H);
+  const sx = Math.min(Math.max((x0 + x1) / 2 - cw / 2, 0), W - cw);
+  const sy = Math.min(Math.max((y0 + y1) / 2 - ch / 2, 0), H - ch);
+  return drawToDataUrl(img, sx, sy, cw, ch, 640);
 }
 
 /* ================= wardrobe ================= */
@@ -323,9 +356,17 @@ const ITEM_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["name", "category", "subcategory", "colors", "pattern", "material", "seasons", "warmth", "formality", "style_tags", "notes"],
+        required: ["image_index", "bbox", "name", "category", "subcategory", "colors", "pattern", "material", "seasons", "warmth", "formality", "style_tags", "notes"],
         properties: {
-          name: { type: "string", description: "짧은 한국어 이름, 예: '네이비 울 가디건'" },
+          image_index: { type: "integer", description: "이 아이템이 가장 온전히 보이는 이미지 번호" },
+          bbox: {
+            type: "object",
+            additionalProperties: false,
+            required: ["x0", "y0", "x1", "y1"],
+            description: "그 이미지 안에서 아이템을 감싸는 상자. 이미지 왼쪽 위가 (0,0), 오른쪽 아래가 (1000,1000)인 비율 좌표",
+            properties: { x0: { type: "integer" }, y0: { type: "integer" }, x1: { type: "integer" }, y1: { type: "integer" } },
+          },
+          name:{ type: "string", description: "짧은 한국어 이름, 예: '네이비 울 가디건'" },
           category: { type: "string", enum: CATEGORIES },
           subcategory: { type: "string", description: "예: 셔츠, 니트, 슬랙스, 청바지, 코트, 스니커즈" },
           colors: { type: "array", items: { type: "string" } },
@@ -342,14 +383,29 @@ const ITEM_SCHEMA = {
   },
 };
 
-async function analyzePhoto(dataUrl) {
+const SLICES_PER_REQUEST = 8;
+
+// slices: 같은 사진(또는 긴 캡처를 자른 조각들)의 dataURL 배열
+async function analyzeSlices(slices) {
+  const multi = slices.length > 1;
+  const content = [];
+  slices.forEach((url, i) => {
+    if (multi) content.push({ type: "text", text: `이미지 ${i}` });
+    content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: url.split(",")[1] } });
+  });
+  content.push({
+    type: "text",
+    text: multi
+      ? `위 ${slices.length}장은 하나의 긴 캡처를 위에서 아래로 자른 조각이고, 이웃한 조각끼리 위아래가 조금 겹쳐요. 겹친 부분에 보이는 아이템은 한 번만 적고, 가장 온전히 보이는 조각 번호를 image_index로 주세요. 아이템들을 분석해 주세요.`
+      : "이 사진 속 아이템들을 분석해 주세요. image_index는 0입니다.",
+  });
   const out = await askJSON({
     effort: "low",
-    system: "당신은 패션 스타일리스트입니다. 사진 속 의류/신발/가방/액세서리를 옷장 데이터베이스용으로 정확히 분류합니다. 한국어로 답하세요. 사진에 사람이 입고 있으면 착용한 아이템 각각을 따로 항목으로 만듭니다. 의류가 없으면 빈 배열을 반환하세요.",
-    content: [
-      { type: "image", source: { type: "base64", media_type: "image/jpeg", data: dataUrl.split(",")[1] } },
-      { type: "text", text: "이 사진 속 아이템들을 분석해 주세요." },
-    ],
+    system:
+      "당신은 패션 스타일리스트입니다. 사진 속 의류/신발/가방/액세서리를 옷장 데이터베이스용으로 정확히 분류합니다. 한국어로 답하세요. " +
+      "사진에 사람이 입고 있으면 착용한 아이템 각각을 따로 항목으로 만듭니다. 쇼핑앱·주문내역 캡처라면 상품 사진과 함께 상품명·색상 옵션 글자도 참고합니다. " +
+      "같은 상품이 여러 번 보여도 한 번만 적습니다. 의류가 없으면 빈 배열을 반환하세요.",
+    content,
     schema: ITEM_SCHEMA,
   });
   return out.items;
@@ -396,13 +452,19 @@ $("#photo-input").addEventListener("change", async (e) => {
   const worker = async () => {
     while (queue.length) {
       const file = queue.shift();
-      const p = { image: await resizeImage(file) };
+      const p = { image: "" };
       pending.push(p);
-      renderCloset();
       try {
-        for (const it of await analyzePhoto(p.image)) {
-          await db.put("items", { ...it, id: uid(), image: p.image, createdAt: Date.now() });
-          added++;
+        const slices = await sliceImage(file);
+        p.image = slices[0];
+        renderCloset();
+        for (let s = 0; s < slices.length; s += SLICES_PER_REQUEST) {
+          const batch = slices.slice(s, s + SLICES_PER_REQUEST);
+          for (const { image_index, bbox, ...it } of await analyzeSlices(batch)) {
+            const src = batch[image_index] ?? batch[0];
+            await db.put("items", { ...it, id: uid(), image: await cropItem(src, bbox), createdAt: Date.now() });
+            added++;
+          }
         }
       } catch (err) {
         failed++;

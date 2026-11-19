@@ -558,3 +558,12 @@ body[data-tab="today"], body[data-tab="closet"] { overflow: visible; min-height:
 /* 모든 화면 공통으로 적용 (기록·일정·설정이 짧을 때도 탭바 위치 동일) */
 body { min-height: calc(100lvh + 1px); }
 @supports not (height: 100lvh) { body { min-height: calc(100vh + 1px); } }
+
+/* ===================== v19 ===================== */
+/* 이제 홈 화면 앱도 화면 끝까지 그려지므로, 홈 바 위로 띄워서 둥근 모서리에 잘리지 않게 */
+.tabs, .standalone .tabs { bottom: max(8px, calc(env(safe-area-inset-bottom, 0px) - 12px)); }
+body, .standalone body { padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
+/* 코디 카드 아래 점이 탭바에 닿지 않게 */
+#tab-today.pane.active { padding-bottom: 10px; }
+#tab-today .dots { margin-top: 8px; }
+.tab.pane.active#tab-closet { padding-bottom: 6px; }

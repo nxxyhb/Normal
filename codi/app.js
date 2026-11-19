@@ -643,7 +643,7 @@ const OUTFIT_SCHEMA = {
     weather_advice: { type: "string", description: "그날 날씨에 맞는 옷차림 요령 한두 문장" },
     outfits: {
       type: "array",
-      description: "추천 코디 2~3개, 가장 추천하는 것부터",
+      description: "추천 코디 정확히 2개, 가장 추천하는 것부터",
       items: {
         type: "object",
         additionalProperties: false,
@@ -750,7 +750,7 @@ $("#recommend-btn").addEventListener("click", async () => {
         "당신은 한국 사용자의 개인 스타일리스트입니다. 사용자의 실제 옷장에 있는 아이템만으로 코디를 짭니다. " +
         "아침·저녁 기온 차이, 체감온도, 비 소식을 고려해 겉옷과 신발을 정하고, 색 조합과 상황에 맞는 격식을 맞춥니다. " +
         "각 코디는 최소 상의+하의(또는 원피스)+신발을 포함하고, 필요하면 아우터/가방/액세서리를 더합니다. " +
-        "옷장에 해당 카테고리가 없으면 있는 것만으로 구성하고 missing_items에 적습니다. 한국어로 친근하게 답하세요.",
+        "옷장에 해당 카테고리가 없으면 있는 것만으로 구성하고 missing_items에 적습니다. 코디는 서로 분위기가 다른 2개만 제안합니다. 한국어로 친근하게 답하세요.",
       content: prompt,
       schema: OUTFIT_SCHEMA,
       tools: useSearch ? [{ type: "web_search_20260209", name: "web_search", max_uses: 3 }] : undefined,

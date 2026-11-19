@@ -644,12 +644,13 @@ const OUTFIT_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["title", "item_ids", "reason", "styling_tip"],
+        required: ["title", "item_ids", "reason", "styling_tip", "pinterest_query"],
         properties: {
           title: { type: "string" },
           item_ids: { type: "array", items: { type: "string" }, description: "옷장 아이템 id만 사용" },
           reason: { type: "string" },
           styling_tip: { type: "string" },
+          pinterest_query: { type: "string", description: "핀터레스트에서 비슷한 착장 사진을 찾을 영어 검색어 5~10단어: 성별 + 핵심 아이템의 색·종류 + 스타일 (예: 'men light blue oxford shirt burgundy cardigan black puffer outfit')" },
         },
       },
     },
@@ -781,6 +782,13 @@ function restoreResult() {
   renderResult(r);
 }
 
+// 핀터레스트 검색 링크 (예전 결과처럼 검색어가 없으면 옷 이름으로 대신)
+function pinterestUrl(o) {
+  const q = o.pinterest_query || [o.title, "코디"].join(" ");
+  return `https://www.pinterest.com/search/pins/?q=${encodeURIComponent(q)}`;
+}
+const PIN_ICON = `<svg viewBox="0 0 24 24"><path d="M12 2.5a9.5 9.5 0 0 0-3.5 18.3c-.1-.8-.2-2 0-2.9l1.2-5s-.3-.6-.3-1.5c0-1.4.8-2.5 1.8-2.5.9 0 1.3.6 1.3 1.4 0 .9-.5 2.1-.8 3.3-.2 1 .5 1.8 1.5 1.8 1.8 0 3.1-1.9 3.1-4.6 0-2.4-1.7-4.1-4.2-4.1-2.8 0-4.5 2.1-4.5 4.4 0 .9.3 1.8.8 2.3.1.1.1.2.1.3l-.3 1.2c0 .2-.2.3-.4.2-1.3-.6-2.1-2.5-2.1-4 0-3.3 2.4-6.3 6.9-6.3 3.6 0 6.4 2.6 6.4 6 0 3.6-2.3 6.5-5.4 6.5-1.1 0-2.1-.6-2.4-1.2l-.7 2.5c-.2.9-.9 2.1-1.3 2.8A9.5 9.5 0 1 0 12 2.5z" fill="currentColor" stroke="none"/></svg>`;
+
 function renderResult(r) {
   const n = r.outfits.length;
   const slides = r.outfits.map((o, idx) => {
@@ -791,7 +799,7 @@ function renderResult(r) {
     <div class="outfit-slide">
       <div class="card outfit">
         <div class="outfit-body">
-          <div class="rank">${idx === 0 ? "BEST PICK" : `OPTION ${idx + 1}`}<span>${idx + 1} / ${n}</span></div>
+          <div class="rank">${idx === 0 ? "BEST PICK" : `OPTION ${idx + 1}`}<span class="rank-right"><a class="pin-link" href="${pinterestUrl(o)}" target="_blank" rel="noopener">${PIN_ICON}비슷한 코디</a>${idx + 1} / ${n}</span></div>
           <h3>${esc(o.title)}</h3>
           <div class="outfit-items" style="--cols:${cols}">${itemFigures(o.item_ids)}</div>
           <p class="reason">${esc(o.reason)}</p>
@@ -899,7 +907,7 @@ $("#recommend-result").addEventListener("click", async (e) => {
   const o = lastResult.outfits[idx];
   lastResult.wornIdx = idx;
   saveResult();
-  await db.put("history", { id: uid(), createdAt: Date.now(), date: lastResult.date, occasion: lastResult.occasion, place: lastResult.place, title: o.title, item_ids: o.item_ids });
+  await db.put("history", { id: uid(), createdAt: Date.now(), date: lastResult.date, occasion: lastResult.occasion, place: lastResult.place, title: o.title, item_ids: o.item_ids, pinterest_query: o.pinterest_query || "" });
   b.textContent = "기록했어요 ✓";
   b.disabled = true;
   b.classList.add("primary");
@@ -983,6 +991,7 @@ async function renderHistory() {
         <button class="h-del" data-del="${h.id}" aria-label="기록 삭제">삭제</button>
       </div>
       <h3>${esc(h.title)}</h3>
+      <a class="pin-link h-pin" href="${pinterestUrl(h)}" target="_blank" rel="noopener">${PIN_ICON}핀터레스트에서 비슷한 코디 보기</a>
       <div class="outfit-items" style="--cols:${Math.min(5, Math.max(3, h.item_ids.length))}">${itemFigures(h.item_ids)}</div>
     </div>`).join("");
   $("#history-empty").style.display = hist.length ? "none" : "block";

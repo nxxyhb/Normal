@@ -546,12 +546,13 @@ const OUTFIT_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["title", "item_ids", "reason", "styling_tip"],
+        required: ["title", "item_ids", "reason", "styling_tip", "look_prompt_en"],
         properties: {
           title: { type: "string" },
           item_ids: { type: "array", items: { type: "string" }, description: "옷장 아이템 id만 사용" },
           reason: { type: "string" },
           styling_tip: { type: "string" },
+          look_prompt_en: { type: "string", description: "이미지 생성용 영어 묘사 한 문장: 이 코디의 각 아이템을 색·소재·핏까지 구체적으로 (예: 'black glossy leather cropped puffer jacket over a charcoal wool crew-neck cardigan, light blue oversized oxford shirt, wide brown corduroy trousers, black leather derby shoes'). 사람·배경 묘사는 넣지 말 것" },
         },
       },
     },
@@ -643,9 +644,46 @@ function itemFigures(ids) {
     .join("");
 }
 
-/* ---------- 입은 모습 이미지 (Gemini) ---------- */
+/* ---------- 입은 모습 이미지 ---------- */
+// Gemini 키가 없으면 무료 Pollinations(글 설명만 보고 그림), 있으면 Gemini(내 옷 사진 참고)
+const blobToDataUrl = (blob) => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(blob); });
+let lastFreeLookAt = 0;
+
+async function generateFreeLook(outfit) {
+  const wait = 15000 - (Date.now() - lastFreeLookAt);
+  if (wait > 0) throw new Error(`무료 모드는 15초에 한 장만 돼요. ${Math.ceil(wait / 1000)}초 뒤에 다시 눌러 주세요.`);
+  lastFreeLookAt = Date.now();
+  const its = outfit.item_ids.map((id) => items.find((i) => i.id === id)).filter(Boolean);
+  const clothes = outfit.look_prompt_en || its.map((i) => `${(i.colors || []).join(" ")} ${i.subcategory || i.name}`).join(", ");
+  const person = /여성|여자|female|woman/i.test(settings.profile) ? "a young Korean woman" : /남성|남자|male|man/i.test(settings.profile) ? "a young Korean man" : "a young Korean model";
+  const style = settings.lookStyle === "3d"
+    ? "stylized 3D rendered fashion avatar, cute but realistic proportions, soft studio lighting, clean octane render"
+    : "realistic full-body fashion lookbook photo, natural studio lighting, 50mm";
+  const prompt = `${style}, ${person} standing, full body head to shoes, wearing ${clothes}, plain light grey background, no text`;
+  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt.slice(0, 900))}?width=768&height=1024&nologo=true&seed=${Math.floor(Math.random() * 1e6)}`;
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 90000);
+  try {
+    const r = await fetch(url, { signal: ctrl.signal });
+    if (r.status === 429) throw new Error("무료 서버가 바빠요. 잠시 후 다시 눌러 주세요.");
+    if (!r.ok) throw new Error(`무료 이미지 서버 오류 (${r.status}). 잠시 후 다시 시도해 주세요.`);
+    return await blobToDataUrl(await r.blob());
+  } catch (err) {
+    if (err.name === "AbortError") throw new Error("무료 서버 응답이 너무 늦어요. 잠시 후 다시 시도해 주세요.");
+    if (err instanceof TypeError) {
+      // 브라우저가 직접 받기를 막으면 이미지 태그로 불러오기
+      await new Promise((res, rej) => { const i = new Image(); i.onload = res; i.onerror = () => rej(new Error("무료 이미지 서버에 연결하지 못했어요.")); i.src = url; });
+      return url;
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function generateLook(outfit) {
-  if (!settings.geminiKey) throw new Error("설정 탭에서 Gemini API 키를 먼저 입력해 주세요.");
+  if (!settings.geminiKey) return generateFreeLook(outfit);
   const its = outfit.item_ids.map((id) => items.find((i) => i.id === id)).filter(Boolean);
   const style = settings.lookStyle === "3d"
     ? "a stylized high-quality 3D rendered character (like a modern 3D fashion avatar, soft studio lighting, clean render)"
@@ -691,7 +729,7 @@ async function generateLook(outfit) {
 function lookBlock(o, idx) {
   return o.look
     ? `<img class="look" src="${o.look}" alt="${esc(o.title)} 착용 이미지" />`
-    : `<button class="wide ghost-line" data-look="${idx}">입은 모습 보기</button>`;
+    : `<button class="wide ghost-line" data-look="${idx}">입은 모습 보기${settings.geminiKey ? "" : " (무료)"}</button>`;
 }
 
 function renderResult(r) {
@@ -719,7 +757,7 @@ $("#recommend-result").addEventListener("click", async (e) => {
     const o = lastResult.outfits[idx];
     const slot = $(`#look-${idx}`);
     lb.disabled = true;
-    lb.textContent = "입은 모습 만드는 중… (10~30초)";
+    lb.textContent = settings.geminiKey ? "입은 모습 만드는 중… (10~30초)" : "무료로 그리는 중… (최대 1분)";
     try {
       o.look = await generateLook(o);
       slot.innerHTML = lookBlock(o, idx);

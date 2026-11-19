@@ -1,6 +1,7 @@
 import Anthropic from "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@1.2.0/+esm";
 
-const MODEL = "claude-sonnet-5-5";
+const MODEL = "claude-sonnet-5-5";        // 코디 추천
+const PHOTO_MODEL = "claude-haiku-5-5";  // 옷 사진 분석 (저렴)
 const BUSAN = { name: "부산", admin: "부산광역시", lat: 35.1796, lon: 129.0756 };
 const CATEGORIES = ["상의", "하의", "아우터", "원피스", "신발", "가방", "액세서리", "기타"];
 const DAY_COUNT = 10;
@@ -113,15 +114,16 @@ function client() {
 }
 
 // Structured JSON output; handles pause_turn (web search) and refusals.
-async function askJSON({ system, content, schema, effort = "medium", tools }) {
+async function askJSON({ system, content, schema, effort = "medium", tools, model = MODEL }) {
   const c = client();
   const messages = [{ role: "user", content }];
   for (let i = 0; i < 5; i++) {
+    // Haiku는 거절 시 다른 모델로 넘기는 서버 기능이 없어서 Sonnet일 때만 켬
+    const fallback = model === PHOTO_MODEL ? {} : { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" };
     const res = await c.beta.messages.create({
-      model: MODEL,
+      model,
       max_tokens: 16000,
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
+      ...fallback,
       system,
       messages,
       tools,
@@ -472,6 +474,7 @@ async function analyzeSlices(slices) {
   });
   const out = await askJSON({
     effort: "low",
+    model: PHOTO_MODEL,
     system:
       "당신은 패션 스타일리스트입니다. 사진 속 의류/신발/가방/액세서리를 옷장 데이터베이스용으로 정확히 분류합니다. 한국어로 답하세요. " +
       "사진에 사람이 입고 있으면 착용한 아이템 각각을 따로 항목으로 만듭니다. 쇼핑앱·주문내역 캡처라면 상품 사진과 함께 상품명·색상 옵션 글자도 참고합니다. " +
@@ -742,7 +745,7 @@ $("#recommend-btn").addEventListener("click", async () => {
 
   try {
     const result = await askJSON({
-      effort: "medium",
+      effort: "low",
       system:
         "당신은 한국 사용자의 개인 스타일리스트입니다. 사용자의 실제 옷장에 있는 아이템만으로 코디를 짭니다. " +
         "아침·저녁 기온 차이, 체감온도, 비 소식을 고려해 겉옷과 신발을 정하고, 색 조합과 상황에 맞는 격식을 맞춥니다. " +

@@ -978,9 +978,12 @@ async function renderHistory() {
   const hist = (await db.all("history")).sort((a, b) => b.createdAt - a.createdAt);
   $("#history-list").innerHTML = hist.map((h) => `
     <div class="card history-entry">
-      <div class="row"><span class="date grow">${md(h.date)} (${dow(h.date)}) · ${esc(h.occasion)}${h.place ? ` · ${esc(h.place)}` : ""}</span><button class="ghost danger" data-del="${h.id}">삭제</button></div>
+      <div class="h-head">
+        <span class="date">${md(h.date)} (${dow(h.date)}) · ${esc(h.occasion)}${h.place ? ` · ${esc(h.place)}` : ""}</span>
+        <button class="h-del" data-del="${h.id}" aria-label="기록 삭제">삭제</button>
+      </div>
       <h3>${esc(h.title)}</h3>
-      <div class="outfit-items">${itemFigures(h.item_ids)}</div>
+      <div class="outfit-items" style="--cols:${Math.min(5, Math.max(3, h.item_ids.length))}">${itemFigures(h.item_ids)}</div>
     </div>`).join("");
   $("#history-empty").style.display = hist.length ? "none" : "block";
 }

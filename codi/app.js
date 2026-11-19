@@ -356,7 +356,7 @@ const ITEM_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["image_index", "bbox", "name", "category", "subcategory", "colors", "pattern", "material", "seasons", "warmth", "formality", "style_tags", "notes"],
+        required: ["image_index", "bbox", "name", "category", "subcategory", "colors", "pattern", "material", "seasons", "warmth", "formality", "style_tags", "notes", "brand", "product_name", "product_code"],
         properties: {
           image_index: { type: "integer", description: "이 아이템이 가장 온전히 보이는 이미지 번호" },
           bbox: {
@@ -366,7 +366,10 @@ const ITEM_SCHEMA = {
             description: "그 이미지 안에서 아이템을 감싸는 상자. 이미지 왼쪽 위가 (0,0), 오른쪽 아래가 (1000,1000)인 비율 좌표",
             properties: { x0: { type: "integer" }, y0: { type: "integer" }, x1: { type: "integer" }, y1: { type: "integer" } },
           },
-          name:{ type: "string", description: "짧은 한국어 이름, 예: '네이비 울 가디건'" },
+          name: { type: "string", description: "짧은 한국어 이름, 예: '네이비 울 가디건'" },
+          brand: { type: "string", description: "화면에 글자로 보이는 브랜드명. 안 보이면 빈 문자열 (추측 금지)" },
+          product_name: { type: "string", description: "화면에 글자로 보이는 정확한 상품명. 안 보이면 빈 문자열" },
+          product_code: { type: "string", description: "화면에 보이는 품번/상품번호. 안 보이면 빈 문자열" },
           category: { type: "string", enum: CATEGORIES },
           subcategory: { type: "string", description: "예: 셔츠, 니트, 슬랙스, 청바지, 코트, 스니커즈" },
           colors: { type: "array", items: { type: "string" } },
@@ -499,6 +502,9 @@ $("#closet-grid").addEventListener("click", (e) => {
   form.colors.value = (editing.colors || []).join(", ");
   form.seasons.value = (editing.seasons || []).join(", ");
   form.style_tags.value = (editing.style_tags || []).join(", ");
+  form.brand.value = editing.brand || "";
+  form.product_code.value = editing.product_code || "";
+  $("#item-product").textContent = editing.product_name || "";
   dialog.showModal();
 });
 
@@ -514,6 +520,8 @@ dialog.addEventListener("close", async () => {
       colors: split(form.colors.value),
       seasons: split(form.seasons.value),
       style_tags: split(form.style_tags.value),
+      brand: form.brand.value.trim(),
+      product_code: form.product_code.value.trim(),
     });
   } else if (dialog.returnValue === "delete" && confirm(`'${editing.name}' 삭제할까요?`)) {
     await db.del("items", editing.id);

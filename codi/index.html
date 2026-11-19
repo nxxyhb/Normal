@@ -170,6 +170,7 @@
   <dialog id="item-dialog">
     <form method="dialog" id="item-form">
       <img id="item-img" alt="" />
+      <p id="item-product" class="muted small"></p>
       <label class="field"><span>이름</span><input name="name" /></label>
       <div class="row">
         <label class="field grow"><span>종류</span><select name="category"></select></label>
@@ -178,6 +179,10 @@
       <label class="field"><span>색상</span><input name="colors" placeholder="쉼표로 구분" /></label>
       <label class="field"><span>계절</span><input name="seasons" placeholder="쉼표로 구분" /></label>
       <label class="field"><span>스타일 태그</span><input name="style_tags" placeholder="쉼표로 구분" /></label>
+      <div class="row">
+        <label class="field grow"><span>브랜드</span><input name="brand" /></label>
+        <label class="field grow"><span>품번</span><input name="product_code" /></label>
+      </div>
       <div class="row">
         <button value="delete" class="ghost danger">삭제</button>
         <span class="grow"></span>

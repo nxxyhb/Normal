@@ -108,6 +108,19 @@
         <p class="muted small">이 기기에만 저장되고 Anthropic API로만 전송돼요. <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">키 발급하기 ↗</a></p>
       </div>
       <div class="card">
+        <h3>입은 모습 이미지 (Gemini)</h3>
+        <input id="gemini-key" type="password" placeholder="Gemini API 키 (AIza...)" autocomplete="off" />
+        <div class="seg" id="look-style-seg">
+          <button data-style="photo">실사 화보</button>
+          <button data-style="3d">3D 아바타</button>
+        </div>
+        <details class="small">
+          <summary class="muted">고급: 모델 이름</summary>
+          <input id="gemini-model" type="text" placeholder="gemini-2.5-flash-image" autocomplete="off" />
+        </details>
+        <p class="muted small">코디 카드의 "입은 모습 보기"를 누를 때만 생성돼요 (장당 약 50~100원). 이미지 생성은 결제가 등록된 키만 돼요. <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">키 발급하기 ↗</a></p>
+      </div>
+      <div class="card">
         <h3>위치</h3>
         <label class="switch-row">
           <span>현재 위치 사용<small>꺼져 있거나 위치 권한이 없으면 기본 도시 기준</small></span>

@@ -284,3 +284,12 @@ dialog::backdrop { background: rgba(0,0,0,.5); backdrop-filter: blur(4px); }
 }
 #item-product:empty { display: none; }
 #item-product { margin: -4px 2px 10px; }
+
+/* 입은 모습 */
+.look-slot { margin-bottom: 12px; }
+.look-slot .status { margin-top: 8px; }
+img.look { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 16px; display: block; background: var(--surface-2); margin-bottom: 12px; }
+button.ghost-line { background: transparent; border: 1px dashed var(--line); color: var(--text); }
+button.ghost-line:disabled { animation: pulse 1.2s ease-in-out infinite; }
+details { margin: 0 0 10px; }
+details summary { cursor: pointer; margin-bottom: 8px; }

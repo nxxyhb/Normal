@@ -567,3 +567,6 @@ body, .standalone body { padding-bottom: calc(80px + env(safe-area-inset-bottom,
 #tab-today.pane.active { padding-bottom: 10px; }
 #tab-today .dots { margin-top: 8px; }
 .tab.pane.active#tab-closet { padding-bottom: 6px; }
+/* v20: 탭바 조금 더 위로 */
+.tabs, .standalone .tabs { bottom: max(14px, env(safe-area-inset-bottom, 0px)); }
+body, .standalone body { padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px)); }

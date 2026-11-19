@@ -802,10 +802,8 @@ function renderResult(r) {
     </div>`;
   }).join("");
   const dots = n > 1 ? `<div class="dots" role="tablist">${r.outfits.map((_, i) => `<button data-dot="${i}" class="${i === 0 ? "on" : ""}" aria-label="${i + 1}번째 코디"></button>`).join("")}</div>` : "";
-  const meta = r.date ? `${md(r.date)} (${dow(r.date)})${r.place ? ` · ${esc(r.place)}` : ""}${r.occasion ? ` · ${esc(r.occasion)}` : ""}` : "";
   $("#recommend-result").innerHTML = `
     <div class="result-head">
-      <span class="result-meta">${meta}</span>
       <button class="pill" data-sheet="advice">날씨 팁</button>
       ${r.missing_items.length ? `<button class="pill" data-sheet="missing">살 만한 옷 ${r.missing_items.length}</button>` : ""}
     </div>

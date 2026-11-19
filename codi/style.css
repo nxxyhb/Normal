@@ -503,3 +503,33 @@ dialog.sheet .missing { margin: 0 0 16px; }
   .carousel.fill .outfit-items { gap: 8px; }
   .outfit .reason { font-size: 15px; }
 }
+
+/* ===================== v16: 탭바 슬림 + 위쪽 정리 ===================== */
+/* 탭바: 높이 약 10pt 줄임 (아이콘 조금 작게, 글자는 유지) */
+.tabs { padding: 4px; border-radius: 20px; }
+.tabs button { padding: 5px 2px 3px !important; gap: 1px; border-radius: 16px; }
+.tabs button svg { width: 19px !important; height: 19px !important; }
+.tabs button span { font-size: 10px; }
+.standalone body, body { padding-bottom: 64px; }
+
+/* 날짜 칩: 낮게 */
+#tab-today .days { margin-bottom: 6px; }
+.days button { padding: 3px 6px 2px !important; border-radius: 12px; gap: 0; }
+.days button .d { font-size: 10px; line-height: 1.25; }
+.days button .n { font-size: 15px !important; line-height: 1.2; }
+.days button .dot { margin-top: 0; }
+
+/* 카드 위 줄: 날짜·위치 글자 빼고 버튼만 오른쪽에 */
+.result-head { justify-content: flex-end; margin: 0 0 6px; }
+.pill { padding: 5px 11px; font-size: 12px; }
+
+/* 추천 버튼 줄: 카드 테두리 없이 */
+#tab-today .controls { background: transparent; border: 0; box-shadow: none; padding: 0; margin-bottom: 10px; }
+/* 코디 카드 안: 옷 이름 글자 빼고, 팁 박스·제목 간격 작게 */
+.carousel.fill .outfit-items figcaption { display: none; }
+.carousel.fill .outfit-items { margin-bottom: 8px; }
+.carousel.fill .outfit { padding: 12px 14px; }
+.outfit h3 { margin: 1px 0 8px !important; }
+.outfit .reason { margin-bottom: 6px; }
+.outfit .tip { font-size: 12.5px; padding: 6px 9px; line-height: 1.45; }
+.carousel.fill .outfit > button.wide { padding: 12px; margin-top: 8px; }

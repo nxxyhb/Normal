@@ -19,15 +19,25 @@
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icon.svg" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="style.css?v=11" />
+  <link rel="stylesheet" href="style.css?v=12" />
 </head>
 <body>
   <header class="top">
     <h1 id="page-title">오늘 코디</h1>
+    <div class="top-actions">
+      <button id="cut-all" class="icon-btn for-closet" hidden aria-label="등록된 옷 누끼 따기">
+        <svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><path d="M8.2 7.6 20 16.5M8.2 16.4 20 7.5"/></svg>
+        <span class="badge" id="cut-badge"></span>
+      </button>
+      <label class="icon-btn for-closet" aria-label="옷 사진 추가">
+        <input id="photo-input" type="file" accept="image/*" multiple hidden />
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+      </label>
     <button id="theme-btn" class="icon-btn" aria-label="다크 모드 전환">
       <svg class="sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg>
       <svg class="moon" viewBox="0 0 24 24"><path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5a8.5 8.5 0 1 0 10.7 10.7z"/></svg>
     </button>
+    </div>
   </header>
 
   <main>
@@ -38,21 +48,31 @@
         <div class="skeleton">날씨 불러오는 중…</div>
       </div>
 
-      <div class="card">
-        <div class="seg" id="occasion-seg">
-          <button class="on">출근/학교</button>
-          <button>데이트</button>
-          <button>캐주얼</button>
-          <button>격식</button>
-          <button>운동</button>
-          <button>동네</button>
+      <div class="card controls">
+        <div class="ctl-row">
+          <div class="dd" id="occasion-dd">
+            <button class="dd-btn" id="occasion-btn" aria-haspopup="true"><span id="occasion-label">출근/학교</span><svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+            <div class="dd-menu" hidden>
+              <button data-occ="출근/학교" class="on">출근/학교</button>
+              <button data-occ="데이트">데이트</button>
+              <button data-occ="캐주얼">캐주얼</button>
+              <button data-occ="격식">격식</button>
+              <button data-occ="운동">운동</button>
+              <button data-occ="동네">동네</button>
+            </div>
+          </div>
+          <div class="dd" id="options-dd">
+            <button class="dd-btn" aria-haspopup="true">옵션<span class="dot-mark" id="options-mark" hidden></span><svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+            <div class="dd-menu dd-wide" hidden>
+              <input id="request-note" type="text" placeholder="추가 요청 (예: 흰 셔츠 꼭 입고 싶음)" />
+              <label class="switch-row">
+                <span>요즘 트렌드 검색해서 반영<small>느리고 비용 조금 더</small></span>
+                <input type="checkbox" id="use-search" class="switch" />
+              </label>
+            </div>
+          </div>
+          <button id="recommend-btn" class="primary">코디 추천받기</button>
         </div>
-        <input id="request-note" type="text" placeholder="추가 요청 (예: 흰 셔츠 꼭 입고 싶음)" />
-        <label class="switch-row">
-          <span>요즘 트렌드 검색해서 반영<small>느리고 비용 조금 더</small></span>
-          <input type="checkbox" id="use-search" class="switch" />
-        </label>
-        <button id="recommend-btn" class="primary wide">코디 추천받기</button>
         <p id="recommend-status" class="status"></p>
       </div>
 
@@ -60,18 +80,10 @@
     </section>
 
     <!-- 옷장 -->
-    <section id="tab-closet" class="tab" data-title="옷장">
-      <label class="upload">
-        <input id="photo-input" type="file" accept="image/*" multiple hidden />
-        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-        <span><b>옷 사진 추가</b><small>옷 사진, 쇼핑앱 긴 캡처 모두 OK · 한 장에 여러 벌이면 각각 등록돼요</small></span>
-      </label>
-      <p id="upload-status" class="status"></p>
-      <button id="cut-all" class="wide ghost-line" hidden>등록된 옷 누끼 따기</button>
-      <p id="cut-status" class="status"></p>
+    <section id="tab-closet" class="tab pane" data-title="옷장">
       <div class="filters" id="closet-filters"></div>
-      <div class="grid" id="closet-grid"></div>
-      <p id="closet-empty" class="empty">아직 등록된 옷이 없어요.</p>
+      <div class="pager" id="closet-pager"><div class="pager-track" id="closet-track"></div></div>
+      <p id="closet-empty" class="empty">아직 등록된 옷이 없어요.<br/>오른쪽 위 <b>+</b> 로 옷 사진이나 쇼핑앱 캡처를 추가해 보세요.</p>
     </section>
 
     <!-- 일정 -->
@@ -104,54 +116,63 @@
 
     <!-- 설정 -->
     <section id="tab-settings" class="tab" data-title="설정">
-      <div class="card">
-        <h3>Anthropic API 키</h3>
-        <input id="api-key" type="password" placeholder="sk-ant-..." autocomplete="off" />
-        <p class="muted small">이 기기에만 저장되고 Anthropic API로만 전송돼요. <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">키 발급하기 ↗</a></p>
-      </div>
-      <div class="card">
-        <h3>옷장</h3>
-        <label class="switch-row">
-          <span>옷 등록할 때 누끼 따기<small>배경을 지우고 옷만 남겨요. 무료, 기기 안에서 처리 (처음 한 번 모델 다운로드)</small></span>
-          <input type="checkbox" id="auto-cut" class="switch" />
-        </label>
-      </div>
-      <div class="card">
-        <h3>위치</h3>
-        <label class="switch-row">
-          <span>현재 위치 사용<small>꺼져 있거나 위치 권한이 없으면 기본 도시 기준</small></span>
-          <input type="checkbox" id="use-gps" class="switch" />
-        </label>
-        <div class="search-row">
-          <input id="home-city" type="text" placeholder="기본 도시" />
-          <button id="home-search">변경</button>
+      <div class="list">
+        <div class="li">
+          <span>테마</span>
+          <div class="seg mini" id="theme-seg">
+            <button data-mode="system">시스템</button>
+            <button data-mode="light">라이트</button>
+            <button data-mode="dark">다크</button>
+          </div>
         </div>
-        <div id="home-city-results" class="results"></div>
+        <label class="li"><span>옷 등록할 때 누끼 따기</span><input type="checkbox" id="auto-cut" class="switch" /></label>
+        <label class="li"><span>현재 위치 날씨 사용</span><input type="checkbox" id="use-gps" class="switch" /></label>
+        <details class="li-x">
+          <summary><span>기본 도시</span><span class="val" id="home-val"></span><svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></summary>
+          <div class="li-body">
+            <p class="muted small">위치 권한이 없거나 위 옵션을 끄면 이 도시 날씨로 코디해요.</p>
+            <div class="search-row">
+              <input id="home-city" type="text" placeholder="도시 검색 (예: 부산)" />
+              <button id="home-search">검색</button>
+            </div>
+            <div id="home-city-results" class="results"></div>
+          </div>
+        </details>
+        <details class="li-x">
+          <summary><span>내 스타일</span><span class="val" id="profile-val"></span><svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></summary>
+          <div class="li-body">
+            <textarea id="profile-note" rows="3" placeholder="예: 20대 남성, 미니멀/스트릿 좋아함, 추위 많이 탐"></textarea>
+          </div>
+        </details>
       </div>
-      <div class="card">
-        <h3>테마</h3>
-        <div class="seg" id="theme-seg">
-          <button data-mode="system">시스템</button>
-          <button data-mode="light">라이트</button>
-          <button data-mode="dark">다크</button>
-        </div>
+
+      <div class="list">
+        <details class="li-x">
+          <summary><span>API 키</span><span class="val" id="key-val"></span><svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></summary>
+          <div class="li-body">
+            <input id="api-key" type="password" placeholder="sk-ant-..." autocomplete="off" />
+            <p class="muted small">이 기기에만 저장되고 Anthropic API로만 전송돼요. <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">키 발급하기 ↗</a></p>
+          </div>
+        </details>
+        <details class="li-x">
+          <summary><span>백업</span><span class="val"></span><svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></summary>
+          <div class="li-body">
+            <div class="row">
+              <button id="export-btn" class="grow">내보내기</button>
+              <label class="btn grow">불러오기<input id="import-input" type="file" accept="application/json" hidden /></label>
+            </div>
+            <p class="muted small">옷장·일정·기록은 이 기기에만 저장돼요. 기기를 바꿀 땐 백업 파일로 옮기세요.</p>
+          </div>
+        </details>
       </div>
-      <div class="card">
-        <h3>내 스타일 메모</h3>
-        <textarea id="profile-note" rows="3" placeholder="예: 20대 남성, 미니멀/스트릿 좋아함, 추위 많이 탐"></textarea>
-      </div>
-      <button id="save-settings" class="primary wide">저장</button>
       <p id="settings-status" class="status"></p>
-      <div class="card">
-        <h3>데이터</h3>
-        <div class="row">
-          <button id="export-btn" class="grow">백업 내보내기</button>
-          <label class="btn grow">불러오기<input id="import-input" type="file" accept="application/json" hidden /></label>
-        </div>
-        <p class="muted small">옷장·일정·기록은 이 기기에만 저장돼요. 기기를 바꿀 땐 백업 파일로 옮기세요.</p>
-      </div>
     </section>
   </main>
+
+  <div class="toasts" aria-live="polite">
+    <p id="upload-status" class="toast"></p>
+    <p id="cut-status" class="toast"></p>
+  </div>
 
   <nav class="tabs">
     <button data-tab="today" class="active">
@@ -202,6 +223,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="app.js?v=11"></script>
+  <script type="module" src="app.js?v=12"></script>
 </body>
 </html>

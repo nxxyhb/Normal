@@ -272,25 +272,19 @@ async function loadWeather() {
     if (!w) throw new Error("해당 날짜 예보가 아직 없어요.");
     current = { date, loc, w };
     card.innerHTML = `
-      <div class="w-top">
-        <div>
-          <div class="w-loc">
-            <svg viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
-            ${esc(loc.name)}${loc.admin ? `<span class="muted small">&nbsp;${esc(loc.admin)}</span>` : ""}
-          </div>
-          <div class="w-desc">${md(date)} (${dow(date)}) · ${esc(w.desc)} · 강수 ${w.rain ?? 0}%</div>
-        </div>
+      <div class="w-compact">
         <div class="w-icon">${w.icon}</div>
+        <div class="w-main">
+          <div class="w-temp">${r0(w.max)}°<small>/${r0(w.min)}°</small></div>
+          <div class="w-desc">체감 ${r0(w.feelsMin)}~${r0(w.feelsMax)}°</div>
+        </div>
+        <div class="w-side">
+          <div class="w-loc"><svg viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>${esc(loc.name)}</div>
+          <div class="w-desc">${esc(w.desc)} · 강수 ${w.rain ?? 0}%</div>
+          <div class="w-desc">아침 ${r0(w.morning)}° · 낮 ${r0(w.afternoon)}° · 저녁 ${r0(w.evening)}°</div>
+        </div>
       </div>
-      <div class="w-temp">${r0(w.max)}°<small> / ${r0(w.min)}°</small></div>
-      <div class="w-desc">체감 ${r0(w.feelsMin)}° ~ ${r0(w.feelsMax)}°</div>
-      ${loc.trip ? `<span class="trip-badge">✈ 일정${loc.trip.memo ? ` · ${esc(loc.trip.memo)}` : ""}</span>` : ""}
-      <div class="w-hours">
-        <div><span>아침</span><b>${r0(w.morning)}°</b></div>
-        <div><span>낮</span><b>${r0(w.afternoon)}°</b></div>
-        <div><span>저녁</span><b>${r0(w.evening)}°</b></div>
-        <div><span>바람</span><b>${r0(w.wind)}</b></div>
-      </div>`;
+      ${loc.trip ? `<span class="trip-badge">✈ ${esc(loc.trip.city.name)} 일정${loc.trip.memo ? ` · ${esc(loc.trip.memo)}` : ""}</span>` : ""}`;
   } catch (err) {
     if (req !== weatherReq) return;
     card.innerHTML = `<p class="status error">${esc(err.message)}</p>`;
@@ -352,6 +346,7 @@ const BG_LIB = "https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.7.0/+es
 let bgLib = null;
 let cutChain = Promise.resolve(); // 무거운 작업이라 한 번에 하나씩
 let cutRunning = 0;
+let bgLibReady = false;
 const thumb = (i) => i.cutout || i.image;
 
 function cutoutQueued(dataUrl) {
@@ -365,6 +360,7 @@ function cutoutQueued(dataUrl) {
 async function makeCutout(dataUrl) {
   if (!bgLib) bgLib = import(BG_LIB).catch((e) => { bgLib = null; throw e; });
   const { removeBackground } = await bgLib;
+  bgLibReady = true;
   const src = await (await fetch(dataUrl)).blob();
   const out = await removeBackground(src, { model: "isnet_quint8", output: { format: "image/png" } });
   return trimTransparent(out);
@@ -413,8 +409,8 @@ function renderCutStatus() {
   if (!el || !btn) return;
   const todo = items.filter((i) => !i.cutout && !i.cutFailed).length;
   btn.hidden = !settings.autoCut || cutRunning > 0 || todo === 0;
-  btn.textContent = `등록된 옷 ${todo}개 누끼 따기`;
-  el.textContent = cutRunning > 0 ? `누끼 따는 중… ${cutRunning}개 남음 (처음엔 모델을 받느라 1분쯤 걸려요)` : "";
+  $("#cut-badge").textContent = todo > 99 ? "99+" : String(todo);
+  el.textContent = cutRunning > 0 ? `누끼 따는 중… ${cutRunning}개 남음${bgLibReady ? "" : " (처음엔 모델 받느라 1분쯤 걸려요)"}` : "";
 }
 
 /* ================= wardrobe ================= */
@@ -495,24 +491,49 @@ async function refreshItems() {
   renderCloset();
 }
 
+let closetSwiper = null;
 function renderCloset() {
   const cats = ["전체", ...CATEGORIES.filter((c) => items.some((i) => i.category === c))];
+  if (!cats.includes(filter)) filter = "전체";
+  const count = (c) => (c === "전체" ? items.length : items.filter((i) => i.category === c).length);
   $("#closet-filters").innerHTML = items.length
-    ? cats.map((c) => `<button class="${c === filter ? "on" : ""}" data-cat="${c}">${c} ${c === "전체" ? items.length : items.filter((i) => i.category === c).length}</button>`).join("")
+    ? cats.map((c) => `<button class="${c === filter ? "on" : ""}" data-cat="${c}">${c} ${count(c)}</button>`).join("")
     : "";
-  const shown = filter === "전체" ? items : items.filter((i) => i.category === filter);
-  $("#closet-grid").innerHTML =
-    pending.map((p) => `<div class="item pending"><img src="${p.image}" alt="" /><div class="label">분석 중…</div></div>`).join("") +
-    shown.map((i) => `<button class="item ${i.cutout ? "cut" : ""}" data-id="${i.id}"><img src="${thumb(i)}" alt="${esc(i.name)}" loading="lazy" /><div class="label">${esc(i.name)}</div></button>`).join("");
-  $("#closet-empty").style.display = items.length || pending.length ? "none" : "block";
+
+  const track = $("#closet-track");
+  const keep = {};
+  track.querySelectorAll(".page").forEach((pg) => { keep[pg.dataset.cat] = pg.scrollTop; });
+  const tile = (i) => `<button class="item ${i.cutout ? "cut" : ""}" data-id="${i.id}"><img src="${thumb(i)}" alt="${esc(i.name)}" loading="lazy" draggable="false" /><div class="label">${esc(i.name)}</div></button>`;
+  const pend = pending.map((p) => `<div class="item pending"><img src="${p.image}" alt="" /><div class="label">분석 중…</div></div>`).join("");
+  track.innerHTML = items.length || pending.length
+    ? cats.map((c) => {
+        const list = c === "전체" ? items : items.filter((i) => i.category === c);
+        return `<div class="page" data-cat="${c}"><div class="grid">${c === "전체" ? pend : ""}${list.map(tile).join("")}</div></div>`;
+      }).join("")
+    : "";
+  track.querySelectorAll(".page").forEach((pg) => { if (keep[pg.dataset.cat]) pg.scrollTop = keep[pg.dataset.cat]; });
+
+  closetSwiper ??= makeSwiper($("#closet-pager"), track, {
+    onChange: (_, page) => {
+      if (!page) return;
+      filter = page.dataset.cat;
+      document.querySelectorAll("#closet-filters button").forEach((b) => {
+        const on = b.dataset.cat === filter;
+        b.classList.toggle("on", on);
+        if (on) b.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+      });
+    },
+  });
+  closetSwiper.go(Math.max(0, cats.indexOf(filter)), false);
+  $("#closet-empty").hidden = !!(items.length || pending.length);
   renderCutStatus();
 }
 
 $("#closet-filters").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-cat]");
-  if (!b) return;
-  filter = b.dataset.cat;
-  renderCloset();
+  if (!b || !closetSwiper) return;
+  const i = [...document.querySelectorAll("#closet-filters button")].indexOf(b);
+  closetSwiper.go(i);
 });
 
 $("#photo-input").addEventListener("change", async (e) => {
@@ -558,6 +579,7 @@ $("#photo-input").addEventListener("change", async (e) => {
   };
   await Promise.all([worker(), worker(), worker()]);
   setStatus(status, `완료: ${added}개 아이템 등록${failed ? `\n${failed}장 실패 — ${lastErr}` : ""}`, failed > 0);
+  setTimeout(() => { if (status.textContent.startsWith("완료")) setStatus(status, ""); }, failed ? 8000 : 4000);
 });
 
 const dialog = $("#item-dialog");
@@ -565,7 +587,7 @@ const form = $("#item-form");
 form.category.innerHTML = CATEGORIES.map((c) => `<option>${c}</option>`).join("");
 let editing = null;
 
-$("#closet-grid").addEventListener("click", (e) => {
+$("#closet-track").addEventListener("click", (e) => {
   const b = e.target.closest("button.item");
   if (!b) return;
   editing = items.find((i) => i.id === b.dataset.id);
@@ -646,12 +668,40 @@ const OUTFIT_SCHEMA = {
 };
 
 let occasion = "출근/학교";
-$("#occasion-seg").addEventListener("click", (e) => {
-  const b = e.target.closest("button");
-  if (!b) return;
-  occasion = b.textContent.trim();
-  document.querySelectorAll("#occasion-seg button").forEach((x) => x.classList.toggle("on", x === b));
+
+// 누르면 튀어나오는 드롭다운 (바깥을 누르면 닫힘)
+function closeMenus(except) {
+  document.querySelectorAll(".dd").forEach((dd) => {
+    if (dd === except) return;
+    dd.classList.remove("open");
+    dd.querySelector(".dd-menu").hidden = true;
+  });
+}
+document.querySelectorAll(".dd").forEach((dd) => {
+  dd.querySelector(".dd-btn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    const menu = dd.querySelector(".dd-menu");
+    const open = menu.hidden;
+    closeMenus(dd);
+    menu.hidden = !open;
+    dd.classList.toggle("open", open);
+  });
+  dd.querySelector(".dd-menu").addEventListener("click", (e) => e.stopPropagation());
 });
+document.addEventListener("click", () => closeMenus());
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenus(); });
+
+$("#occasion-dd .dd-menu").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-occ]");
+  if (!b) return;
+  occasion = b.dataset.occ;
+  $("#occasion-label").textContent = occasion;
+  document.querySelectorAll("#occasion-dd button[data-occ]").forEach((x) => x.classList.toggle("on", x === b));
+  closeMenus();
+});
+const syncOptionsMark = () => { $("#options-mark").hidden = !($("#request-note").value.trim() || $("#use-search").checked); };
+$("#request-note").addEventListener("input", syncOptionsMark);
+$("#use-search").addEventListener("change", syncOptionsMark);
 
 let lastResult = null;
 
@@ -663,6 +713,7 @@ async function recentlyWorn() {
 $("#recommend-btn").addEventListener("click", async () => {
   const btn = $("#recommend-btn");
   const status = $("#recommend-status");
+  closeMenus();
   if (!items.length) { setStatus(status, "옷장 탭에서 옷 사진부터 추가해 주세요.", true); return; }
   if (!current) { setStatus(status, "날씨 정보가 아직 없어요. 잠시 후 다시 시도해 주세요.", true); return; }
 
@@ -759,27 +810,23 @@ function renderResult(r) {
 }
 
 // 손가락을 따라 움직이다가, 놓으면 항상 한 장 단위로 딱 맞게 이동 (중간에 걸쳐 멈추지 않음)
-function bindCarousel() {
-  const vp = $("#outfit-carousel");
-  const track = $("#outfit-track");
-  if (!vp || !track) return;
-  const slides = [...track.children];
-  const n = slides.length;
-  const dots = [...document.querySelectorAll("#recommend-result .dots button")];
+function makeSwiper(vp, track, { onChange, fitHeight = false } = {}) {
+  const pages = () => [...track.children];
   let idx = 0, sx = 0, sy = 0, dx = 0, axis = null, pid = null, dragged = false;
   let samples = []; // 최근 손가락 위치 (튕기는 속도 계산용)
 
-  const fitHeight = () => { vp.style.height = slides[idx].offsetHeight + "px"; };
+  const fit = () => { if (fitHeight && pages()[idx]) vp.style.height = pages()[idx].offsetHeight + "px"; };
   const go = (i, anim = true) => {
-    idx = Math.max(0, Math.min(n - 1, i));
+    const n = pages().length;
+    idx = Math.max(0, Math.min(Math.max(0, n - 1), i));
     track.style.transition = anim ? "transform .34s cubic-bezier(.22,.8,.26,1)" : "none";
     track.style.transform = `translate3d(${-idx * 100}%,0,0)`;
-    dots.forEach((d, k) => d.classList.toggle("on", k === idx));
-    fitHeight();
+    fit();
+    onChange?.(idx, pages()[idx]);
   };
 
   vp.addEventListener("pointerdown", (e) => {
-    if (n < 2 || (e.pointerType === "mouse" && e.button !== 0)) return;
+    if (pages().length < 2 || (e.pointerType === "mouse" && e.button !== 0)) return;
     pid = e.pointerId; sx = e.clientX; sy = e.clientY; dx = 0; axis = null; dragged = false; samples = [[performance.now(), e.clientX]];
   });
   vp.addEventListener("pointermove", (e) => {
@@ -795,6 +842,7 @@ function bindCarousel() {
     const now = performance.now();
     samples.push([now, e.clientX]);
     while (samples.length > 2 && now - samples[0][0] > 120) samples.shift();
+    const n = pages().length;
     dx = (idx === 0 && mx > 0) || (idx === n - 1 && mx < 0) ? mx / 3 : mx; // 양 끝에선 살짝만 끌림
     track.style.transform = `translate3d(calc(${-idx * 100}% + ${dx}px),0,0)`;
   });
@@ -813,9 +861,18 @@ function bindCarousel() {
   vp.addEventListener("pointercancel", end);
   // 끌어서 넘긴 직후 손을 뗀 자리의 버튼이 눌리지 않게
   vp.addEventListener("click", (e) => { if (dragged) { e.stopPropagation(); e.preventDefault(); dragged = false; } }, true);
-  dots.forEach((d) => d.addEventListener("click", () => go(+d.dataset.dot)));
-  if ("ResizeObserver" in window) { const ro = new ResizeObserver(() => fitHeight()); slides.forEach((sl) => ro.observe(sl)); }
-  go(0, false);
+  if (fitHeight && "ResizeObserver" in window) { const ro = new ResizeObserver(() => fit()); pages().forEach((pg) => ro.observe(pg)); }
+  return { go, get idx() { return idx; } };
+}
+
+function bindCarousel() {
+  const vp = $("#outfit-carousel");
+  const track = $("#outfit-track");
+  if (!vp || !track) return;
+  const dots = [...document.querySelectorAll("#recommend-result .dots button")];
+  const sw = makeSwiper(vp, track, { fitHeight: true, onChange: (i) => dots.forEach((d, k) => d.classList.toggle("on", k === i)) });
+  dots.forEach((d) => d.addEventListener("click", () => sw.go(+d.dataset.dot)));
+  sw.go(0, false);
 }
 
 $("#recommend-result").addEventListener("click", async (e) => {
@@ -917,40 +974,46 @@ $("#history-list").addEventListener("click", async (e) => {
   renderHistory();
 });
 
-/* ================= settings ================= */
-let pendingHome = null;
+/* ================= settings (바꾸면 바로 저장) ================= */
+let flashTimer = 0;
+function flash(msg, isError = false) {
+  setStatus($("#settings-status"), msg, isError);
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => setStatus($("#settings-status"), ""), 2500);
+}
 function fillSettings() {
   $("#api-key").value = settings.key;
   $("#profile-note").value = settings.profile;
   $("#use-gps").checked = settings.useGps;
-  $("#home-city").value = settings.homeCity.name;
   $("#auto-cut").checked = settings.autoCut;
+  $("#home-val").textContent = settings.homeCity.name;
+  $("#profile-val").textContent = settings.profile ? (settings.profile.length > 14 ? settings.profile.slice(0, 14) + "…" : settings.profile) : "미입력";
+  $("#key-val").textContent = settings.key ? "설정됨" : "입력 필요";
+  $("#key-val").classList.toggle("warn", !settings.key);
 }
+$("#api-key").addEventListener("change", () => { settings.key = $("#api-key").value.trim(); fillSettings(); flash("API 키를 저장했어요."); });
+$("#profile-note").addEventListener("change", () => { settings.profile = $("#profile-note").value.trim(); fillSettings(); flash("스타일 메모를 저장했어요."); });
+$("#auto-cut").addEventListener("change", () => { settings.autoCut = $("#auto-cut").checked; renderCutStatus(); });
+$("#use-gps").addEventListener("change", () => { settings.useGps = $("#use-gps").checked; gpsPromise = null; loadWeather(); });
+
 async function searchHome() {
   const q = $("#home-city").value.trim();
   if (!q) return;
   try {
     const list = await geocode(q);
-    cityResults($("#home-city-results"), list, (c) => { pendingHome = c; });
-    if (list.length === 1) { pendingHome = list[0]; $("#home-city-results button").classList.add("on"); }
-  } catch (err) { setStatus($("#settings-status"), err.message, true); }
+    cityResults($("#home-city-results"), list, (c) => {
+      settings.homeCity = c;
+      $("#home-city").value = "";
+      $("#home-city-results").innerHTML = "";
+      $("#home-val").closest("details").open = false;
+      fillSettings();
+      loadWeather();
+      flash(`기본 도시를 ${c.name}(으)로 바꿨어요.`);
+    });
+  } catch (err) { flash(err.message, true); }
 }
 $("#home-search").addEventListener("click", searchHome);
 $("#home-city").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); searchHome(); } });
-
-$("#save-settings").addEventListener("click", () => {
-  settings.key = $("#api-key").value.trim();
-  settings.profile = $("#profile-note").value.trim();
-  settings.autoCut = $("#auto-cut").checked;
-  const gpsChanged = settings.useGps !== $("#use-gps").checked;
-  settings.useGps = $("#use-gps").checked;
-  if (pendingHome) { settings.homeCity = pendingHome; pendingHome = null; }
-  $("#home-city-results").innerHTML = "";
-  fillSettings();
-  if (gpsChanged) gpsPromise = null;
-  loadWeather();
-  setStatus($("#settings-status"), "저장했어요.");
-});
 
 $("#export-btn").addEventListener("click", async () => {
   const data = { version: 2, items: await db.all("items"), history: await db.all("history"), trips: await db.all("trips") };
@@ -982,11 +1045,23 @@ $("#cut-all").addEventListener("click", () => {
 });
 
 /* ================= tabs & init ================= */
+// 옷장 화면은 고정 영역 안에서만 스크롤되도록 헤더·탭바 위치를 재서 넘겨줌
+function measureLayout() {
+  const top = document.querySelector(".top").getBoundingClientRect().bottom;
+  const navTop = document.querySelector(".tabs").getBoundingClientRect().top;
+  root.style.setProperty("--top-h", `${Math.round(top)}px`);
+  root.style.setProperty("--nav-space", `${Math.round(innerHeight - navTop)}px`);
+}
+addEventListener("resize", measureLayout);
+
 function showTab(name) {
   document.querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("active", x.dataset.tab === name));
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.id === `tab-${name}`));
   $("#page-title").textContent = $(`#tab-${name}`).dataset.title;
+  document.body.dataset.tab = name;
+  closeMenus();
   window.scrollTo(0, 0);
+  measureLayout();
 }
 document.querySelector(".tabs").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-tab]");
@@ -998,4 +1073,6 @@ renderDayChips();
 refreshItems().then(restoreResult);
 renderHistory();
 refreshTrips();
-if (!settings.key) showTab("settings");
+document.body.dataset.tab = "today";
+measureLayout();
+if (!settings.key) { showTab("settings"); $("#key-val").closest("details").open = true; }

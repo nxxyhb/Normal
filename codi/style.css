@@ -303,3 +303,124 @@ dialog::backdrop { background: rgba(0,0,0,.5); backdrop-filter: blur(4px); }
 .item.cut img, .outfit-items figure.cut img { object-fit: contain; padding: 8%; background: var(--tile); }
 #item-img { background: var(--tile); }
 button.ghost-line { background: transparent; border: 1px dashed var(--line); color: var(--text); margin-top: 10px; }
+
+/* ===================== v12: 미니멀 레이아웃 ===================== */
+[hidden] { display: none !important; }
+
+/* 헤더 버튼들 */
+.top-actions { display: flex; align-items: center; gap: 8px; }
+.top-actions .for-closet { display: none; }
+body[data-tab="closet"] .top-actions .for-closet { display: grid; }
+label.icon-btn { cursor: pointer; }
+.icon-btn { position: relative; }
+.icon-btn .badge {
+  position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 999px; background: var(--invert); color: var(--invert-text);
+  font-size: 10.5px; font-weight: 700; line-height: 18px; text-align: center; font-variant-numeric: tabular-nums;
+}
+
+/* 탭바: 조금 더 아래로 */
+.tabs { bottom: max(6px, calc(env(safe-area-inset-bottom, 0px) - 12px)); }
+body { padding-bottom: calc(76px + max(6px, calc(env(safe-area-inset-bottom, 0px) - 12px))); }
+
+/* 날짜 칩: 작게 */
+.days { margin-bottom: 10px; gap: 6px; }
+.days button { min-width: 46px; padding: 6px 6px 5px; border-radius: 14px; }
+.days button .d { font-size: 11px; }
+.days button .n { font-size: 15px; }
+.days button .dot { width: 4px; height: 4px; margin-top: 1px; }
+
+/* 날씨: 한 줄 요약 */
+.weather-card { padding: 14px 16px; }
+.w-compact { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 12px; }
+.w-compact .w-icon { font-size: 30px; }
+.w-compact .w-temp { font-size: 34px; margin: 0; line-height: 1; }
+.w-compact .w-temp small { font-size: 16px; }
+.w-compact .w-main .w-desc { margin-top: 4px; }
+.w-side { min-width: 0; text-align: right; }
+.w-side .w-loc { justify-content: flex-end; font-size: 13px; }
+.w-side .w-loc, .w-side .w-desc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.w-side .w-desc { font-size: 12px; margin-top: 1px; }
+.weather-card .trip-badge { margin-top: 10px; }
+
+/* 추천 컨트롤: 드롭다운 + 버튼 한 줄 */
+.controls { padding: 12px; }
+.ctl-row { display: flex; gap: 8px; align-items: stretch; }
+.dd { position: relative; flex: none; }
+.dd-btn {
+  height: 100%; display: inline-flex; align-items: center; gap: 4px;
+  padding: 11px 12px; border-radius: 12px; font-weight: 600; font-size: 14px; white-space: nowrap;
+}
+.dd-btn .chev { width: 16px; height: 16px; transition: transform .2s; }
+.dd.open .dd-btn .chev { transform: rotate(180deg); }
+.dot-mark { width: 6px; height: 6px; border-radius: 50%; background: var(--invert); margin-left: 2px; }
+.dd-menu {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 30;
+  min-width: 150px; padding: 6px; display: flex; flex-direction: column; gap: 2px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
+  box-shadow: 0 12px 32px rgba(0,0,0,.18);
+  animation: pop .16s ease-out;
+}
+@keyframes pop { from { opacity: 0; transform: translateY(-4px) scale(.98); } to { opacity: 1; transform: none; } }
+.dd-menu button { text-align: left; background: transparent; padding: 10px 12px; border-radius: 10px; font-weight: 500; font-size: 14px; }
+.dd-menu button.on { background: var(--surface-2); font-weight: 700; }
+.dd-menu button.on::after { content: "✓"; float: right; }
+.dd-wide { width: min(300px, calc(100vw - 48px)); padding: 12px; }
+.dd-wide input { margin-bottom: 8px; }
+.dd-wide .switch-row { margin: 4px 0 0; }
+#recommend-btn { flex: 1; min-width: 0; padding: 11px 10px; white-space: nowrap; }
+
+/* 옷장: 헤더와 탭바 사이 고정 영역 안에서만 스크롤, 좌우로 넘기면 카테고리 이동 */
+body[data-tab="closet"] { overflow: hidden; }
+.tab.pane.active {
+  position: fixed; top: var(--top-h, 76px); bottom: var(--nav-space, 90px); left: 0; right: 0;
+  max-width: 640px; margin: 0 auto; display: flex; flex-direction: column;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.pane .filters { flex: none; margin: 2px -16px 10px; }
+.pager { flex: 1; min-height: 0; overflow: hidden; touch-action: pan-y; margin: 0 -16px; }
+.pager-track { display: flex; height: 100%; will-change: transform; }
+.page {
+  flex: 0 0 100%; min-width: 0; height: 100%; overflow-y: auto; overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch; padding: 0 16px 16px;
+}
+.page .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.page img { -webkit-user-drag: none; }
+.pane .empty { margin: auto 0; }
+
+/* 진행 상태 알림: 탭바 바로 위 */
+.toasts {
+  position: fixed; left: 0; right: 0; bottom: calc(var(--nav-space, 90px) + 8px); z-index: 15;
+  display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; padding: 0 16px;
+}
+.toast {
+  margin: 0; max-width: 520px; padding: 9px 14px; border-radius: 999px; font-size: 13px; text-align: center;
+  background: var(--invert); color: var(--invert-text); box-shadow: 0 6px 20px rgba(0,0,0,.2); white-space: pre-wrap;
+}
+.toast:empty { display: none; }
+.toast.error { background: var(--danger); color: #fff; border-radius: 16px; }
+
+/* 설정: 리스트형 */
+.list {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 18px;
+  overflow: hidden; margin-bottom: 14px;
+}
+.list > * + * { border-top: 1px solid var(--line); }
+.li, .li-x > summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  min-height: 52px; padding: 10px 16px; font-size: 15px; font-weight: 500; cursor: pointer;
+}
+.li { cursor: default; }
+label.li { cursor: pointer; }
+.li-x > summary { list-style: none; }
+.li-x > summary::-webkit-details-marker { display: none; }
+.li-x .val { margin-left: auto; color: var(--muted); font-size: 14px; font-weight: 400; max-width: 50%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.li-x .val.warn { color: var(--danger); font-weight: 600; }
+.li-x .chev { width: 18px; height: 18px; color: var(--muted); transform: rotate(-90deg); transition: transform .2s; flex: none; }
+.li-x[open] .chev { transform: none; }
+.li-body { padding: 0 16px 14px; }
+.li-body .muted { margin: 0 0 10px; }
+.li-body textarea, .li-body input { margin-bottom: 8px; }
+.seg.mini { margin: 0; gap: 4px; flex-wrap: nowrap; }
+.seg.mini button { padding: 6px 10px; font-size: 13px; }
+#settings-status { text-align: center; }

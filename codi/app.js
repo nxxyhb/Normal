@@ -1044,6 +1044,21 @@ $("#cut-all").addEventListener("click", () => {
   todo.forEach((i) => cutItem(i));
 });
 
+/* ================= 자동 업데이트 ================= */
+// 홈 화면 앱은 예전 화면을 오래 붙잡고 있어서, 열 때마다 최신 버전 번호를 확인하고 다르면 새로 불러옴
+const APP_V = Number(new URL(import.meta.url).searchParams.get("v")) || 0;
+async function checkUpdate() {
+  try {
+    const r = await fetch(`version.json?t=${Date.now()}`, { cache: "no-store" });
+    if (!r.ok) return;
+    const { v } = await r.json();
+    // 이미 그 버전 주소로 다시 열었는데도 옛 화면이면 무한 새로고침하지 않게 한 번만 시도
+    if (v > APP_V && new URLSearchParams(location.search).get("v") !== String(v)) location.replace(`${location.pathname}?v=${v}`);
+  } catch {}
+}
+checkUpdate();
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkUpdate(); });
+
 /* ================= tabs & init ================= */
 // 옷장 화면은 고정 영역 안에서만 스크롤되도록 헤더·탭바 위치를 재서 넘겨줌
 function measureLayout() {

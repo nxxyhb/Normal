@@ -463,3 +463,43 @@ dialog.sheet {
 dialog.sheet h3 { margin: 0 0 8px; font-size: 17px; }
 dialog.sheet p { margin: 0 0 16px; line-height: 1.6; }
 dialog.sheet .missing { margin: 0 0 16px; }
+
+/* ===================== v15: 탭바 위치 + 기기별 비율 ===================== */
+/* 홈 화면 앱: 홈 바 영역(약 34pt)은 페이지가 쓸 수 없는 공간이라, 그 위에 바로 붙임 */
+.standalone .tabs { bottom: 4px; }
+.standalone body { padding-bottom: 80px; }
+
+/* 화면 높이에 맞춰 위쪽 영역 크기 자동 조절 */
+.top { padding-top: calc(clamp(8px, 1.6vh, 14px) + env(safe-area-inset-top, 0px)); padding-bottom: clamp(6px, 1.2vh, 12px); }
+.top h1 { font-size: clamp(22px, 3.1vh, 27px); }
+.icon-btn { width: clamp(36px, 4.8vh, 40px); height: clamp(36px, 4.8vh, 40px); }
+.days button { padding-block: clamp(4px, .8vh, 7px); }
+.days button .n { font-size: clamp(14px, 1.9vh, 16px); }
+.weather-card { padding-block: clamp(10px, 1.6vh, 14px); }
+.w-compact .w-temp { font-size: clamp(28px, 4.1vh, 36px); }
+.w-compact .w-icon { font-size: clamp(24px, 3.6vh, 32px); }
+.controls { padding: clamp(8px, 1.4vh, 12px); }
+.dd-btn, #recommend-btn { padding-block: clamp(9px, 1.4vh, 12px); }
+.tabs button { padding-block: clamp(6px, 1vh, 9px) clamp(4px, .8vh, 7px); }
+.tabs button svg { width: clamp(20px, 2.7vh, 23px); height: clamp(20px, 2.7vh, 23px); }
+
+/* 작은 폰 (아이폰 SE, mini 등) */
+@media (max-height: 720px) {
+  .w-side .w-desc + .w-desc { display: none; }        /* 시간대별 기온 줄 생략 */
+  .days button .d { font-size: 10px; }
+  .outfit h3 { font-size: 15px; margin-bottom: 8px; }
+  .outfit .reason { font-size: 13px; }
+  .carousel.fill .outfit > button.wide { padding: 11px; margin-top: 8px; }
+  .tabs button span { font-size: 10px; }
+}
+/* 좁은 폰 */
+@media (max-width: 360px) {
+  .dd-btn { padding-inline: 9px; font-size: 13px; }
+  #recommend-btn { font-size: 14px; }
+  .w-compact { gap: 8px; }
+}
+/* 큰 폰 (Pro Max, Plus): 옷 사진을 조금 더 크게 */
+@media (min-height: 900px) {
+  .carousel.fill .outfit-items { gap: 8px; }
+  .outfit .reason { font-size: 15px; }
+}

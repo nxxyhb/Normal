@@ -655,12 +655,12 @@ async function generateFreeLook(outfit) {
   lastFreeLookAt = Date.now();
   const its = outfit.item_ids.map((id) => items.find((i) => i.id === id)).filter(Boolean);
   const clothes = outfit.look_prompt_en || its.map((i) => `${(i.colors || []).join(" ")} ${i.subcategory || i.name}`).join(", ");
-  const person = /여성|여자|female|woman/i.test(settings.profile) ? "a young Korean woman" : /남성|남자|male|man/i.test(settings.profile) ? "a young Korean man" : "a young Korean model";
-  const style = settings.lookStyle === "3d"
-    ? "stylized 3D rendered fashion avatar, cute but realistic proportions, soft studio lighting, clean octane render"
-    : "realistic full-body fashion lookbook photo, natural studio lighting, 50mm";
-  const prompt = `${style}, ${person} standing, full body head to shoes, wearing ${clothes}, plain light grey background, no text`;
-  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt.slice(0, 900))}?width=768&height=1024&nologo=true&seed=${Math.floor(Math.random() * 1e6)}`;
+  const who = /여성|여자|female|woman/i.test(settings.profile) ? "woman" : /남성|남자|male|man/i.test(settings.profile) ? "man" : "person";
+  // 무료 모델은 얼굴을 잘 망가뜨려서, 실사 모드는 쇼핑몰 상세컷처럼 목 아래만 그림
+  const prompt = settings.lookStyle === "3d"
+    ? `Outfit: ${clothes}. Stylized 3D rendered fashion avatar of a young Korean ${who} wearing exactly this outfit, full body standing, polished 3D character render, soft studio light, plain light grey background, no text`
+    : `Outfit: ${clothes}. E-commerce fashion photo of a ${who} wearing exactly this outfit, framed from the neck down to the shoes, face not visible, standing straight, sharp fabric detail, accurate colors, soft studio light, plain light grey background, no text`;
+  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt.slice(0, 900))}?width=768&height=1024&model=flux&nologo=true&seed=${Math.floor(Math.random() * 1e6)}`;
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 90000);

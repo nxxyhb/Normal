@@ -30,6 +30,7 @@ function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch
 const settings = {
   get key() { return lsGet("codi.apikey", ""); }, set key(v) { lsSet("codi.apikey", v); },
   get profile() { return lsGet("codi.profile2", ""); }, set profile(v) { lsSet("codi.profile2", v); },
+  get autoCut() { return lsGet("codi.autoCut", true); }, set autoCut(v) { lsSet("codi.autoCut", v); },
   get useGps() { return lsGet("codi.useGps", true); }, set useGps(v) { lsSet("codi.useGps", v); },
   get homeCity() { return lsGet("codi.homeCity", BUSAN); }, set homeCity(v) { lsSet("codi.homeCity", v); },
 };
@@ -345,6 +346,77 @@ async function cropItem(sliceUrl, b) {
   return drawToDataUrl(img, sx, sy, cw, ch, 640);
 }
 
+/* ================= 누끼 (배경 제거, 브라우저 안에서 무료로) ================= */
+// 처음 한 번 모델(수십 MB)을 내려받고, 이후엔 기기 안에서만 처리해요. 실패하면 원본 사진을 그대로 써요.
+const BG_LIB = "https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.7.0/+esm";
+let bgLib = null;
+let cutChain = Promise.resolve(); // 무거운 작업이라 한 번에 하나씩
+let cutRunning = 0;
+const thumb = (i) => i.cutout || i.image;
+
+function cutoutQueued(dataUrl) {
+  cutRunning++;
+  renderCutStatus();
+  const job = cutChain.then(() => makeCutout(dataUrl));
+  cutChain = job.catch(() => {});
+  return job.finally(() => { cutRunning--; renderCutStatus(); });
+}
+
+async function makeCutout(dataUrl) {
+  if (!bgLib) bgLib = import(BG_LIB).catch((e) => { bgLib = null; throw e; });
+  const { removeBackground } = await bgLib;
+  const src = await (await fetch(dataUrl)).blob();
+  const out = await removeBackground(src, { model: "isnet_quint8", output: { format: "image/png" } });
+  return trimTransparent(out);
+}
+
+// 투명한 여백을 잘라내고 살짝 여백을 둔 PNG로
+async function trimTransparent(blob) {
+  const bmp = await createImageBitmap(blob);
+  const w = bmp.width, h = bmp.height;
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const g = c.getContext("2d");
+  g.drawImage(bmp, 0, 0);
+  const a = g.getImageData(0, 0, w, h).data;
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (a[(y * w + x) * 4 + 3] > 24) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  }
+  if (x1 < 0 || (x1 - x0) * (y1 - y0) < w * h * 0.04) throw new Error("옷을 찾지 못했어요");
+  const pad = Math.round(Math.max(x1 - x0, y1 - y0) * 0.05);
+  const sx = Math.max(0, x0 - pad), sy = Math.max(0, y0 - pad);
+  const sw = Math.min(w, x1 + pad) - sx, sh = Math.min(h, y1 + pad) - sy;
+  const scale = Math.min(1, 560 / Math.max(sw, sh));
+  const o = document.createElement("canvas");
+  o.width = Math.round(sw * scale); o.height = Math.round(sh * scale);
+  o.getContext("2d").drawImage(c, sx, sy, sw, sh, 0, 0, o.width, o.height);
+  return o.toDataURL("image/png");
+}
+
+async function cutItem(item) {
+  try {
+    const cutout = await cutoutQueued(item.image);
+    const fresh = (await db.all("items")).find((x) => x.id === item.id);
+    if (fresh) await db.put("items", { ...fresh, cutout, cutFailed: false });
+  } catch (err) {
+    console.warn("누끼 실패", err);
+    const fresh = (await db.all("items")).find((x) => x.id === item.id);
+    if (fresh) await db.put("items", { ...fresh, cutFailed: true });
+  }
+  await refreshItems();
+}
+
+function renderCutStatus() {
+  const el = $("#cut-status");
+  const btn = $("#cut-all");
+  if (!el || !btn) return;
+  const todo = items.filter((i) => !i.cutout && !i.cutFailed).length;
+  btn.hidden = !settings.autoCut || cutRunning > 0 || todo === 0;
+  btn.textContent = `등록된 옷 ${todo}개 누끼 따기`;
+  el.textContent = cutRunning > 0 ? `누끼 따는 중… ${cutRunning}개 남음 (처음엔 모델을 받느라 1분쯤 걸려요)` : "";
+}
+
 /* ================= wardrobe ================= */
 const ITEM_SCHEMA = {
   type: "object",
@@ -431,8 +503,9 @@ function renderCloset() {
   const shown = filter === "전체" ? items : items.filter((i) => i.category === filter);
   $("#closet-grid").innerHTML =
     pending.map((p) => `<div class="item pending"><img src="${p.image}" alt="" /><div class="label">분석 중…</div></div>`).join("") +
-    shown.map((i) => `<button class="item" data-id="${i.id}"><img src="${i.image}" alt="${esc(i.name)}" loading="lazy" /><div class="label">${esc(i.name)}</div></button>`).join("");
+    shown.map((i) => `<button class="item ${i.cutout ? "cut" : ""}" data-id="${i.id}"><img src="${thumb(i)}" alt="${esc(i.name)}" loading="lazy" /><div class="label">${esc(i.name)}</div></button>`).join("");
   $("#closet-empty").style.display = items.length || pending.length ? "none" : "block";
+  renderCutStatus();
 }
 
 $("#closet-filters").addEventListener("click", (e) => {
@@ -465,7 +538,9 @@ $("#photo-input").addEventListener("change", async (e) => {
           const batch = slices.slice(s, s + SLICES_PER_REQUEST);
           for (const { image_index, bbox, ...it } of await analyzeSlices(batch)) {
             const src = batch[image_index] ?? batch[0];
-            await db.put("items", { ...it, id: uid(), image: await cropItem(src, bbox), createdAt: Date.now() });
+            const item = { ...it, id: uid(), image: await cropItem(src, bbox), createdAt: Date.now() };
+            await db.put("items", item);
+            if (settings.autoCut) cutItem(item);
             added++;
           }
         }
@@ -495,7 +570,8 @@ $("#closet-grid").addEventListener("click", (e) => {
   if (!b) return;
   editing = items.find((i) => i.id === b.dataset.id);
   if (!editing) return;
-  $("#item-img").src = editing.image;
+  $("#item-img").src = thumb(editing);
+  $("#uncut-btn").hidden = !editing.cutout;
   form.name.value = editing.name;
   form.category.value = editing.category;
   form.warmth.value = editing.warmth;
@@ -523,6 +599,9 @@ dialog.addEventListener("close", async () => {
       brand: form.brand.value.trim(),
       product_code: form.product_code.value.trim(),
     });
+  } else if (dialog.returnValue === "uncut") {
+    const { cutout, ...rest } = editing;
+    await db.put("items", { ...rest, cutFailed: true });
   } else if (dialog.returnValue === "delete" && confirm(`'${editing.name}' 삭제할까요?`)) {
     await db.del("items", editing.id);
   }
@@ -633,21 +712,12 @@ $("#recommend-btn").addEventListener("click", async () => {
   }
 });
 
-// 룩북: 실제 옷 사진을 몸 순서대로 배치 (위: 아우터·상의 / 가운데: 하의 / 아래: 신발 / 옆: 가방·액세서리)
-function lookbookHtml(ids) {
-  const its = ids.map((id) => items.find((i) => i.id === id)).filter(Boolean);
-  if (!its.length) return "";
-  const by = (...cats) => its.filter((i) => cats.includes(i.category));
-  const upper = [...by("아우터"), ...by("원피스"), ...by("상의")];
-  const lower = by("하의");
-  const feet = by("신발");
-  const side = [...by("가방"), ...by("액세서리"), ...by("기타")];
-  const tile = (i, cls = "") => `<figure class="lb-tile ${cls}"><img src="${i.image}" alt="" /><figcaption>${esc(i.name)}</figcaption></figure>`;
-  const row = (list, cls) => (list.length ? `<div class="lb-row ${cls}">${list.map((i, n) => tile(i, n === 0 && list.length > 1 && cls === "lb-upper" ? "lb-main" : "")).join("")}</div>` : "");
-  return `<div class="lookbook ${side.length ? "has-side" : ""}">
-    <div class="lb-body">${row(upper, "lb-upper")}${row(lower, "lb-lower")}${row(feet, "lb-feet")}</div>
-    ${side.length ? `<div class="lb-side">${side.map((i) => tile(i)).join("")}</div>` : ""}
-  </div>`;
+function itemFigures(ids) {
+  return ids
+    .map((id) => items.find((i) => i.id === id))
+    .filter(Boolean)
+    .map((i) => `<figure class="${i.cutout ? "cut" : ""}"><img src="${thumb(i)}" alt="" draggable="false" /><figcaption>${esc(i.name)}</figcaption></figure>`)
+    .join("");
 }
 
 /* ---------- 결과 화면: 코디 카드 좌우 스와이프 + 오늘 결과 유지 ---------- */
@@ -669,7 +739,7 @@ function renderResult(r) {
       <div class="card outfit">
         <div class="rank">${idx === 0 ? "BEST PICK" : `OPTION ${idx + 1}`}<span>${idx + 1} / ${n}</span></div>
         <h3>${esc(o.title)}</h3>
-        ${lookbookHtml(o.item_ids)}
+        <div class="outfit-items">${itemFigures(o.item_ids)}</div>
         <p>${esc(o.reason)}</p>
         <p class="tip">${esc(o.styling_tip)}</p>
         <button class="${idx === 0 || worn ? "primary" : ""} wide" data-wear="${idx}" ${worn ? "disabled" : ""}>${worn ? "기록했어요 ✓" : "이걸로 입을게"}</button>
@@ -684,23 +754,68 @@ function renderResult(r) {
   const meta = r.date ? `<div class="result-meta">${md(r.date)} (${dow(r.date)})${r.place ? ` · ${esc(r.place)}` : ""}${r.occasion ? ` · ${esc(r.occasion)}` : ""}</div>` : "";
   $("#recommend-result").innerHTML =
     `<div class="card">${meta}<p class="advice">${esc(r.weather_advice)}</p></div>` +
-    `<div class="outfit-track" id="outfit-track">${slides}</div>${dots}${trend}${missing}`;
+    `<div class="carousel" id="outfit-carousel"><div class="outfit-track" id="outfit-track">${slides}</div></div>${dots}${trend}${missing}`;
   bindCarousel();
 }
 
+// 손가락을 따라 움직이다가, 놓으면 항상 한 장 단위로 딱 맞게 이동 (중간에 걸쳐 멈추지 않음)
 function bindCarousel() {
+  const vp = $("#outfit-carousel");
   const track = $("#outfit-track");
-  if (!track) return;
+  if (!vp || !track) return;
+  const slides = [...track.children];
+  const n = slides.length;
   const dots = [...document.querySelectorAll("#recommend-result .dots button")];
-  const slides = [...track.querySelectorAll(".outfit-slide")];
-  const step = () => (slides[1] ? slides[1].offsetLeft - slides[0].offsetLeft : track.clientWidth);
-  const pageIdx = () => Math.round(track.scrollLeft / step());
-  let raf = 0;
-  track.addEventListener("scroll", () => {
-    cancelAnimationFrame(raf);
-    raf = requestAnimationFrame(() => { const i = pageIdx(); dots.forEach((d, k) => d.classList.toggle("on", k === i)); });
-  }, { passive: true });
-  dots.forEach((d) => d.addEventListener("click", () => track.scrollTo({ left: +d.dataset.dot * step(), behavior: "smooth" })));
+  let idx = 0, sx = 0, sy = 0, dx = 0, axis = null, pid = null, dragged = false;
+  let samples = []; // 최근 손가락 위치 (튕기는 속도 계산용)
+
+  const fitHeight = () => { vp.style.height = slides[idx].offsetHeight + "px"; };
+  const go = (i, anim = true) => {
+    idx = Math.max(0, Math.min(n - 1, i));
+    track.style.transition = anim ? "transform .34s cubic-bezier(.22,.8,.26,1)" : "none";
+    track.style.transform = `translate3d(${-idx * 100}%,0,0)`;
+    dots.forEach((d, k) => d.classList.toggle("on", k === idx));
+    fitHeight();
+  };
+
+  vp.addEventListener("pointerdown", (e) => {
+    if (n < 2 || (e.pointerType === "mouse" && e.button !== 0)) return;
+    pid = e.pointerId; sx = e.clientX; sy = e.clientY; dx = 0; axis = null; dragged = false; samples = [[performance.now(), e.clientX]];
+  });
+  vp.addEventListener("pointermove", (e) => {
+    if (e.pointerId !== pid) return;
+    const mx = e.clientX - sx, my = e.clientY - sy;
+    if (!axis) {
+      if (Math.abs(mx) < 6 && Math.abs(my) < 6) return;
+      axis = Math.abs(mx) > Math.abs(my) ? "x" : "y";
+      if (axis === "x") { try { vp.setPointerCapture(pid); } catch {} track.style.transition = "none"; }
+    }
+    if (axis !== "x") return;
+    dragged = true;
+    const now = performance.now();
+    samples.push([now, e.clientX]);
+    while (samples.length > 2 && now - samples[0][0] > 120) samples.shift();
+    dx = (idx === 0 && mx > 0) || (idx === n - 1 && mx < 0) ? mx / 3 : mx; // 양 끝에선 살짝만 끌림
+    track.style.transform = `translate3d(calc(${-idx * 100}% + ${dx}px),0,0)`;
+  });
+  const end = (e) => {
+    if (e.pointerId !== pid) return;
+    pid = null;
+    if (axis !== "x") return;
+    const [ta, xa] = samples[0], [tb, xb] = samples[samples.length - 1];
+    const v = (xb - xa) / Math.max(16, tb - ta); // 최근 0.12초 속도 (px/ms)
+    const th = vp.clientWidth * 0.15;
+    if (dx < -th || (v < -0.3 && dx < -12)) go(idx + 1);
+    else if (dx > th || (v > 0.3 && dx > 12)) go(idx - 1);
+    else go(idx);
+  };
+  vp.addEventListener("pointerup", end);
+  vp.addEventListener("pointercancel", end);
+  // 끌어서 넘긴 직후 손을 뗀 자리의 버튼이 눌리지 않게
+  vp.addEventListener("click", (e) => { if (dragged) { e.stopPropagation(); e.preventDefault(); dragged = false; } }, true);
+  dots.forEach((d) => d.addEventListener("click", () => go(+d.dataset.dot)));
+  if ("ResizeObserver" in window) { const ro = new ResizeObserver(() => fitHeight()); slides.forEach((sl) => ro.observe(sl)); }
+  go(0, false);
 }
 
 $("#recommend-result").addEventListener("click", async (e) => {
@@ -791,7 +906,7 @@ async function renderHistory() {
     <div class="card history-entry">
       <div class="row"><span class="date grow">${md(h.date)} (${dow(h.date)}) · ${esc(h.occasion)}${h.place ? ` · ${esc(h.place)}` : ""}</span><button class="ghost danger" data-del="${h.id}">삭제</button></div>
       <h3>${esc(h.title)}</h3>
-      ${lookbookHtml(h.item_ids)}
+      <div class="outfit-items">${itemFigures(h.item_ids)}</div>
     </div>`).join("");
   $("#history-empty").style.display = hist.length ? "none" : "block";
 }
@@ -809,6 +924,7 @@ function fillSettings() {
   $("#profile-note").value = settings.profile;
   $("#use-gps").checked = settings.useGps;
   $("#home-city").value = settings.homeCity.name;
+  $("#auto-cut").checked = settings.autoCut;
 }
 async function searchHome() {
   const q = $("#home-city").value.trim();
@@ -825,6 +941,7 @@ $("#home-city").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.
 $("#save-settings").addEventListener("click", () => {
   settings.key = $("#api-key").value.trim();
   settings.profile = $("#profile-note").value.trim();
+  settings.autoCut = $("#auto-cut").checked;
   const gpsChanged = settings.useGps !== $("#use-gps").checked;
   settings.useGps = $("#use-gps").checked;
   if (pendingHome) { settings.homeCity = pendingHome; pendingHome = null; }
@@ -857,6 +974,11 @@ $("#import-input").addEventListener("change", async (e) => {
   } catch {
     setStatus($("#settings-status"), "백업 파일을 읽지 못했어요.", true);
   }
+});
+
+$("#cut-all").addEventListener("click", () => {
+  const todo = items.filter((i) => !i.cutout && !i.cutFailed);
+  todo.forEach((i) => cutItem(i));
 });
 
 /* ================= tabs & init ================= */

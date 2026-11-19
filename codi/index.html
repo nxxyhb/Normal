@@ -19,7 +19,7 @@
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icon.svg" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="style.css?v=10" />
+  <link rel="stylesheet" href="style.css?v=11" />
 </head>
 <body>
   <header class="top">
@@ -67,6 +67,8 @@
         <span><b>옷 사진 추가</b><small>옷 사진, 쇼핑앱 긴 캡처 모두 OK · 한 장에 여러 벌이면 각각 등록돼요</small></span>
       </label>
       <p id="upload-status" class="status"></p>
+      <button id="cut-all" class="wide ghost-line" hidden>등록된 옷 누끼 따기</button>
+      <p id="cut-status" class="status"></p>
       <div class="filters" id="closet-filters"></div>
       <div class="grid" id="closet-grid"></div>
       <p id="closet-empty" class="empty">아직 등록된 옷이 없어요.</p>
@@ -106,6 +108,13 @@
         <h3>Anthropic API 키</h3>
         <input id="api-key" type="password" placeholder="sk-ant-..." autocomplete="off" />
         <p class="muted small">이 기기에만 저장되고 Anthropic API로만 전송돼요. <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">키 발급하기 ↗</a></p>
+      </div>
+      <div class="card">
+        <h3>옷장</h3>
+        <label class="switch-row">
+          <span>옷 등록할 때 누끼 따기<small>배경을 지우고 옷만 남겨요. 무료, 기기 안에서 처리 (처음 한 번 모델 다운로드)</small></span>
+          <input type="checkbox" id="auto-cut" class="switch" />
+        </label>
       </div>
       <div class="card">
         <h3>위치</h3>
@@ -185,6 +194,7 @@
       </div>
       <div class="row">
         <button value="delete" class="ghost danger">삭제</button>
+        <button value="uncut" id="uncut-btn" class="ghost" hidden>원본 사진으로</button>
         <span class="grow"></span>
         <button value="cancel">취소</button>
         <button value="save" class="primary">저장</button>
@@ -192,6 +202,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="app.js?v=10"></script>
+  <script type="module" src="app.js?v=11"></script>
 </body>
 </html>

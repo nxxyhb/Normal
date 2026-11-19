@@ -636,6 +636,23 @@ $("#recommend-btn").addEventListener("click", async () => {
   }
 });
 
+// 룩북: 실제 옷 사진을 몸 순서대로 배치 (위: 아우터·상의 / 가운데: 하의 / 아래: 신발 / 옆: 가방·액세서리)
+function lookbookHtml(ids) {
+  const its = ids.map((id) => items.find((i) => i.id === id)).filter(Boolean);
+  if (!its.length) return "";
+  const by = (...cats) => its.filter((i) => cats.includes(i.category));
+  const upper = [...by("아우터"), ...by("원피스"), ...by("상의")];
+  const lower = by("하의");
+  const feet = by("신발");
+  const side = [...by("가방"), ...by("액세서리"), ...by("기타")];
+  const tile = (i, cls = "") => `<figure class="lb-tile ${cls}"><img src="${i.image}" alt="" /><figcaption>${esc(i.name)}</figcaption></figure>`;
+  const row = (list, cls) => (list.length ? `<div class="lb-row ${cls}">${list.map((i, n) => tile(i, n === 0 && list.length > 1 && cls === "lb-upper" ? "lb-main" : "")).join("")}</div>` : "");
+  return `<div class="lookbook ${side.length ? "has-side" : ""}">
+    <div class="lb-body">${row(upper, "lb-upper")}${row(lower, "lb-lower")}${row(feet, "lb-feet")}</div>
+    ${side.length ? `<div class="lb-side">${side.map((i) => tile(i)).join("")}</div>` : ""}
+  </div>`;
+}
+
 function itemFigures(ids) {
   return ids
     .map((id) => items.find((i) => i.id === id))
@@ -729,7 +746,7 @@ async function generateLook(outfit) {
 function lookBlock(o, idx) {
   return o.look
     ? `<img class="look" src="${o.look}" alt="${esc(o.title)} 착용 이미지" />`
-    : `<button class="wide ghost-line" data-look="${idx}">입은 모습 보기${settings.geminiKey ? "" : " (무료)"}</button>`;
+    : `<button class="wide ghost-line" data-look="${idx}">AI로 입은 모습 그려보기${settings.geminiKey ? "" : " (무료)"}</button>`;
 }
 
 function renderResult(r) {
@@ -737,8 +754,8 @@ function renderResult(r) {
     <div class="card outfit">
       <div class="rank">${idx === 0 ? "BEST PICK" : `OPTION ${idx + 1}`}</div>
       <h3>${esc(o.title)}</h3>
+      ${lookbookHtml(o.item_ids)}
       <div class="look-slot" id="look-${idx}">${lookBlock(o, idx)}</div>
-      <div class="outfit-items">${itemFigures(o.item_ids)}</div>
       <p>${esc(o.reason)}</p>
       <p class="tip">${esc(o.styling_tip)}</p>
       <button class="${idx === 0 ? "primary" : ""} wide" data-wear="${idx}">이걸로 입을게</button>
@@ -851,7 +868,7 @@ async function renderHistory() {
       <div class="row"><span class="date grow">${md(h.date)} (${dow(h.date)}) · ${esc(h.occasion)}${h.place ? ` · ${esc(h.place)}` : ""}</span><button class="ghost danger" data-del="${h.id}">삭제</button></div>
       <h3>${esc(h.title)}</h3>
       ${h.look ? `<img class="look" src="${h.look}" alt="" />` : ""}
-      <div class="outfit-items">${itemFigures(h.item_ids)}</div>
+      ${lookbookHtml(h.item_ids)}
     </div>`).join("");
   $("#history-empty").style.display = hist.length ? "none" : "block";
 }

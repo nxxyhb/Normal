@@ -424,3 +424,42 @@ label.li { cursor: pointer; }
 .seg.mini { margin: 0; gap: 4px; flex-wrap: nowrap; }
 .seg.mini button { padding: 6px 10px; font-size: 13px; }
 #settings-status { text-align: center; }
+
+/* ===================== v14: 오늘 코디도 한 화면 고정 ===================== */
+body[data-tab="today"] { overflow: hidden; }
+#tab-today.pane.active > * { flex: none; }
+#tab-today .days { margin: 2px -16px 8px; padding: 2px 16px 2px; }
+#tab-today .weather-card, #tab-today .controls { margin-bottom: 8px; }
+#tab-today .controls .status:empty { display: none; }
+#tab-today .controls .status { margin-top: 8px; }
+.result-pane { flex: 1 1 auto !important; min-height: 0; display: flex; flex-direction: column; }
+.result-pane > .empty { margin: auto 0; padding: 0 8px; }
+.result-head { display: flex; align-items: center; gap: 6px; margin: 2px 0 8px; flex: none; }
+.result-head .result-meta { flex: 1; min-width: 0; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pill { flex: none; padding: 6px 12px; border-radius: 999px; font-size: 12.5px; font-weight: 600; background: var(--surface); border: 1px solid var(--line); }
+.carousel.fill { flex: 1; min-height: 0; height: auto; }
+.carousel.fill .outfit-track { height: 100%; align-items: stretch; }
+.carousel.fill .outfit-slide { height: 100%; }
+.carousel.fill .outfit { height: 100%; display: flex; flex-direction: column; padding: 14px; }
+.outfit-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.outfit .rank { font-size: 11px; }
+.outfit h3 { font-size: 17px; margin: 2px 0 10px; }
+.carousel.fill .outfit-items { grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); gap: 6px; margin-bottom: 10px; }
+.carousel.fill .outfit-items img { border-radius: 10px; }
+.carousel.fill .outfit-items figcaption { font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.outfit .reason { font-size: 14px; line-height: 1.45; margin: 0 0 8px; }
+.outfit .tip { font-size: 13px; padding: 8px 10px; margin-bottom: 0 !important; }
+.carousel.fill .outfit > button.wide { flex: none; margin-top: 10px; padding: 13px; }
+#tab-today .dots { flex: none; margin: 8px 0 0; }
+
+/* 아래에서 올라오는 시트 */
+dialog.sheet {
+  margin: auto auto 0; width: 100%; max-width: 640px; max-height: 70vh; overflow-y: auto;
+  border-radius: 24px 24px 0 0; border-bottom: 0;
+  padding: 20px max(20px, env(safe-area-inset-left, 0px)) calc(16px + env(safe-area-inset-bottom, 0px));
+  animation: sheet-up .22s ease-out;
+}
+@keyframes sheet-up { from { transform: translateY(30px); opacity: 0; } to { transform: none; opacity: 1; } }
+dialog.sheet h3 { margin: 0 0 8px; font-size: 17px; }
+dialog.sheet p { margin: 0 0 16px; line-height: 1.6; }
+dialog.sheet .missing { margin: 0 0 16px; }

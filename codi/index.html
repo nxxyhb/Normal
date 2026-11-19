@@ -19,7 +19,7 @@
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icon.svg" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="style.css?v=13" />
+  <link rel="stylesheet" href="style.css?v=14" />
 </head>
 <body>
   <header class="top">
@@ -42,7 +42,7 @@
 
   <main>
     <!-- 오늘 코디 -->
-    <section id="tab-today" class="tab active" data-title="오늘 코디">
+    <section id="tab-today" class="tab pane active" data-title="오늘 코디">
       <div class="days" id="day-chips"></div>
       <div class="card weather-card" id="weather-card">
         <div class="skeleton">날씨 불러오는 중…</div>
@@ -76,7 +76,7 @@
         <p id="recommend-status" class="status"></p>
       </div>
 
-      <div id="recommend-result"></div>
+      <div id="recommend-result" class="result-pane"><p class="empty">날짜와 상황을 고르고 <b>코디 추천받기</b>를 눌러보세요.</p></div>
     </section>
 
     <!-- 옷장 -->
@@ -197,6 +197,11 @@
     </button>
   </nav>
 
+  <dialog id="info-sheet" class="sheet">
+    <div id="sheet-body"></div>
+    <form method="dialog"><button class="wide">닫기</button></form>
+  </dialog>
+
   <dialog id="item-dialog">
     <form method="dialog" id="item-form">
       <img id="item-img" alt="" />
@@ -223,6 +228,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="app.js?v=13"></script>
+  <script type="module" src="app.js?v=14"></script>
 </body>
 </html>

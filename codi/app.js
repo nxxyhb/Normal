@@ -785,29 +785,46 @@ function renderResult(r) {
   const n = r.outfits.length;
   const slides = r.outfits.map((o, idx) => {
     const worn = r.wornIdx === idx;
+    const cnt = o.item_ids.filter((id) => items.some((i) => i.id === id)).length;
+    const cols = cnt <= 5 ? Math.max(cnt, 3) : Math.ceil(cnt / 2);
     return `
     <div class="outfit-slide">
       <div class="card outfit">
-        <div class="rank">${idx === 0 ? "BEST PICK" : `OPTION ${idx + 1}`}<span>${idx + 1} / ${n}</span></div>
-        <h3>${esc(o.title)}</h3>
-        <div class="outfit-items">${itemFigures(o.item_ids)}</div>
-        <p>${esc(o.reason)}</p>
-        <p class="tip">${esc(o.styling_tip)}</p>
+        <div class="outfit-body">
+          <div class="rank">${idx === 0 ? "BEST PICK" : `OPTION ${idx + 1}`}<span>${idx + 1} / ${n}</span></div>
+          <h3>${esc(o.title)}</h3>
+          <div class="outfit-items" style="--cols:${cols}">${itemFigures(o.item_ids)}</div>
+          <p class="reason">${esc(o.reason)}</p>
+          <p class="tip">${esc(o.styling_tip)}</p>
+        </div>
         <button class="${idx === 0 || worn ? "primary" : ""} wide" data-wear="${idx}" ${worn ? "disabled" : ""}>${worn ? "기록했어요 ✓" : "이걸로 입을게"}</button>
       </div>
     </div>`;
   }).join("");
   const dots = n > 1 ? `<div class="dots" role="tablist">${r.outfits.map((_, i) => `<button data-dot="${i}" class="${i === 0 ? "on" : ""}" aria-label="${i + 1}번째 코디"></button>`).join("")}</div>` : "";
-  const missing = r.missing_items.length
-    ? `<div class="card"><h3>있으면 좋은 아이템</h3><ul class="missing">${r.missing_items.map((m) => `<li><b>${esc(m.item)}</b> — ${esc(m.why)}</li>`).join("")}</ul></div>`
-    : "";
-  const trend = r.trend_notes ? `<div class="card"><h3>요즘 트렌드</h3><p>${esc(r.trend_notes)}</p></div>` : "";
-  const meta = r.date ? `<div class="result-meta">${md(r.date)} (${dow(r.date)})${r.place ? ` · ${esc(r.place)}` : ""}${r.occasion ? ` · ${esc(r.occasion)}` : ""}</div>` : "";
-  $("#recommend-result").innerHTML =
-    `<div class="card">${meta}<p class="advice">${esc(r.weather_advice)}</p></div>` +
-    `<div class="carousel" id="outfit-carousel"><div class="outfit-track" id="outfit-track">${slides}</div></div>${dots}${trend}${missing}`;
+  const meta = r.date ? `${md(r.date)} (${dow(r.date)})${r.place ? ` · ${esc(r.place)}` : ""}${r.occasion ? ` · ${esc(r.occasion)}` : ""}` : "";
+  $("#recommend-result").innerHTML = `
+    <div class="result-head">
+      <span class="result-meta">${meta}</span>
+      <button class="pill" data-sheet="advice">날씨 팁</button>
+      ${r.missing_items.length ? `<button class="pill" data-sheet="missing">살 만한 옷 ${r.missing_items.length}</button>` : ""}
+    </div>
+    <div class="carousel fill" id="outfit-carousel"><div class="outfit-track" id="outfit-track">${slides}</div></div>
+    ${dots}`;
   bindCarousel();
 }
+
+// 날씨 팁 / 살 만한 옷은 아래에서 올라오는 시트로
+function openSheet(kind) {
+  const r = lastResult;
+  if (!r) return;
+  const body = kind === "missing"
+    ? `<h3>있으면 좋은 아이템</h3><ul class="missing">${r.missing_items.map((m) => `<li><b>${esc(m.item)}</b> — ${esc(m.why)}</li>`).join("")}</ul>`
+    : `<h3>날씨 팁</h3><p>${esc(r.weather_advice)}</p>${r.trend_notes ? `<h3>요즘 트렌드</h3><p>${esc(r.trend_notes)}</p>` : ""}`;
+  $("#sheet-body").innerHTML = body;
+  $("#info-sheet").showModal();
+}
+$("#info-sheet").addEventListener("click", (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); });
 
 // 손가락을 따라 움직이다가, 놓으면 항상 한 장 단위로 딱 맞게 이동 (중간에 걸쳐 멈추지 않음)
 function makeSwiper(vp, track, { onChange, fitHeight = false } = {}) {
@@ -870,12 +887,14 @@ function bindCarousel() {
   const track = $("#outfit-track");
   if (!vp || !track) return;
   const dots = [...document.querySelectorAll("#recommend-result .dots button")];
-  const sw = makeSwiper(vp, track, { fitHeight: true, onChange: (i) => dots.forEach((d, k) => d.classList.toggle("on", k === i)) });
+  const sw = makeSwiper(vp, track, { onChange: (i) => dots.forEach((d, k) => d.classList.toggle("on", k === i)) });
   dots.forEach((d) => d.addEventListener("click", () => sw.go(+d.dataset.dot)));
   sw.go(0, false);
 }
 
 $("#recommend-result").addEventListener("click", async (e) => {
+  const sh = e.target.closest("button[data-sheet]");
+  if (sh) return openSheet(sh.dataset.sheet);
   const b = e.target.closest("button[data-wear]");
   if (!b || !lastResult) return;
   const idx = +b.dataset.wear;

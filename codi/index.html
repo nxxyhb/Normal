@@ -19,7 +19,7 @@
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icon.svg" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <link rel="stylesheet" href="style.css?v=9" />
+  <link rel="stylesheet" href="style.css?v=10" />
 </head>
 <body>
   <header class="top">
@@ -108,20 +108,6 @@
         <p class="muted small">이 기기에만 저장되고 Anthropic API로만 전송돼요. <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">키 발급하기 ↗</a></p>
       </div>
       <div class="card">
-        <h3>입은 모습 이미지</h3>
-        <p class="muted small">키 없이도 무료로 그려줘요. 다만 무료 모드는 내 옷 사진이 아니라 옷 설명만 보고 그려서 실제 옷과 다를 수 있어요.</p>
-        <input id="gemini-key" type="password" placeholder="Gemini API 키 (선택 · AIza...)" autocomplete="off" />
-        <div class="seg" id="look-style-seg">
-          <button data-style="photo">실사 화보</button>
-          <button data-style="3d">3D 아바타</button>
-        </div>
-        <details class="small">
-          <summary class="muted">고급: 모델 이름</summary>
-          <input id="gemini-model" type="text" placeholder="gemini-2.5-flash-image" autocomplete="off" />
-        </details>
-        <p class="muted small">Gemini 키를 넣으면 내 옷 사진을 참고해서 더 비슷하게 그려요 (장당 약 50~100원, 결제 등록 필요). <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">키 발급하기 ↗</a></p>
-      </div>
-      <div class="card">
         <h3>위치</h3>
         <label class="switch-row">
           <span>현재 위치 사용<small>꺼져 있거나 위치 권한이 없으면 기본 도시 기준</small></span>
@@ -206,6 +192,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="app.js?v=9"></script>
+  <script type="module" src="app.js?v=10"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 import Anthropic from "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@1.2.0/+esm";
 
-const MODEL = "claude-opus-5-5";
+const MODEL = "claude-sonnet-5-5";
 const BUSAN = { name: "부산", admin: "부산광역시", lat: 35.1796, lon: 129.0756 };
 const CATEGORIES = ["상의", "하의", "아우터", "원피스", "신발", "가방", "액세서리", "기타"];
 const DAY_COUNT = 10;
@@ -30,9 +30,6 @@ function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch
 const settings = {
   get key() { return lsGet("codi.apikey", ""); }, set key(v) { lsSet("codi.apikey", v); },
   get profile() { return lsGet("codi.profile2", ""); }, set profile(v) { lsSet("codi.profile2", v); },
-  get geminiKey() { return lsGet("codi.geminiKey", ""); }, set geminiKey(v) { lsSet("codi.geminiKey", v); },
-  get geminiModel() { return lsGet("codi.geminiModel", "") || "gemini-2.5-flash-image"; }, set geminiModel(v) { lsSet("codi.geminiModel", v); },
-  get lookStyle() { return lsGet("codi.lookStyle", "photo"); }, set lookStyle(v) { lsSet("codi.lookStyle", v); },
   get useGps() { return lsGet("codi.useGps", true); }, set useGps(v) { lsSet("codi.useGps", v); },
   get homeCity() { return lsGet("codi.homeCity", BUSAN); }, set homeCity(v) { lsSet("codi.homeCity", v); },
 };
@@ -546,13 +543,12 @@ const OUTFIT_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["title", "item_ids", "reason", "styling_tip", "look_prompt_en"],
+        required: ["title", "item_ids", "reason", "styling_tip"],
         properties: {
           title: { type: "string" },
           item_ids: { type: "array", items: { type: "string" }, description: "옷장 아이템 id만 사용" },
           reason: { type: "string" },
           styling_tip: { type: "string" },
-          look_prompt_en: { type: "string", description: "이미지 생성용 영어 묘사 한 문장: 이 코디의 각 아이템을 색·소재·핏까지 구체적으로 (예: 'black glossy leather cropped puffer jacket over a charcoal wool crew-neck cardigan, light blue oversized oxford shirt, wide brown corduroy trousers, black leather derby shoes'). 사람·배경 묘사는 넣지 말 것" },
         },
       },
     },
@@ -626,6 +622,7 @@ $("#recommend-btn").addEventListener("click", async () => {
       tools: useSearch ? [{ type: "web_search_20260209", name: "web_search", max_uses: 3 }] : undefined,
     });
     lastResult = { ...result, date: ctx.date, occasion, place: ctx.loc.name };
+    saveResult();
     renderResult(lastResult);
     setStatus(status, "");
   } catch (err) {
@@ -653,143 +650,70 @@ function lookbookHtml(ids) {
   </div>`;
 }
 
-function itemFigures(ids) {
-  return ids
-    .map((id) => items.find((i) => i.id === id))
-    .filter(Boolean)
-    .map((i) => `<figure><img src="${i.image}" alt="" /><figcaption>${esc(i.name)}</figcaption></figure>`)
-    .join("");
-}
-
-/* ---------- 입은 모습 이미지 ---------- */
-// Gemini 키가 없으면 무료 Pollinations(글 설명만 보고 그림), 있으면 Gemini(내 옷 사진 참고)
-const blobToDataUrl = (blob) => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(blob); });
-let lastFreeLookAt = 0;
-
-async function generateFreeLook(outfit) {
-  const wait = 15000 - (Date.now() - lastFreeLookAt);
-  if (wait > 0) throw new Error(`무료 모드는 15초에 한 장만 돼요. ${Math.ceil(wait / 1000)}초 뒤에 다시 눌러 주세요.`);
-  lastFreeLookAt = Date.now();
-  const its = outfit.item_ids.map((id) => items.find((i) => i.id === id)).filter(Boolean);
-  const clothes = outfit.look_prompt_en || its.map((i) => `${(i.colors || []).join(" ")} ${i.subcategory || i.name}`).join(", ");
-  const who = /여성|여자|female|woman/i.test(settings.profile) ? "woman" : /남성|남자|male|man/i.test(settings.profile) ? "man" : "person";
-  // 무료 모델은 얼굴을 잘 망가뜨려서, 실사 모드는 쇼핑몰 상세컷처럼 목 아래만 그림
-  const prompt = settings.lookStyle === "3d"
-    ? `Outfit: ${clothes}. Stylized 3D rendered fashion avatar of a young Korean ${who} wearing exactly this outfit, full body standing, polished 3D character render, soft studio light, plain light grey background, no text`
-    : `Outfit: ${clothes}. E-commerce fashion photo of a ${who} wearing exactly this outfit, framed from the neck down to the shoes, face not visible, standing straight, sharp fabric detail, accurate colors, soft studio light, plain light grey background, no text`;
-  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt.slice(0, 900))}?width=768&height=1024&model=flux&nologo=true&seed=${Math.floor(Math.random() * 1e6)}`;
-
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 90000);
-  try {
-    const r = await fetch(url, { signal: ctrl.signal });
-    if (r.status === 429) throw new Error("무료 서버가 바빠요. 잠시 후 다시 눌러 주세요.");
-    if (!r.ok) throw new Error(`무료 이미지 서버 오류 (${r.status}). 잠시 후 다시 시도해 주세요.`);
-    return await blobToDataUrl(await r.blob());
-  } catch (err) {
-    if (err.name === "AbortError") throw new Error("무료 서버 응답이 너무 늦어요. 잠시 후 다시 시도해 주세요.");
-    if (err instanceof TypeError) {
-      // 브라우저가 직접 받기를 막으면 이미지 태그로 불러오기
-      await new Promise((res, rej) => { const i = new Image(); i.onload = res; i.onerror = () => rej(new Error("무료 이미지 서버에 연결하지 못했어요.")); i.src = url; });
-      return url;
-    }
-    throw err;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function generateLook(outfit) {
-  if (!settings.geminiKey) return generateFreeLook(outfit);
-  const its = outfit.item_ids.map((id) => items.find((i) => i.id === id)).filter(Boolean);
-  const style = settings.lookStyle === "3d"
-    ? "a stylized high-quality 3D rendered character (like a modern 3D fashion avatar, soft studio lighting, clean render)"
-    : "a realistic full-body fashion lookbook photograph of a model, natural studio lighting";
-  const prompt =
-    `Create ${style}, full body from head to shoes, standing naturally, front three-quarter view, plain light grey studio background, portrait 3:4.\n` +
-    `The person wears ALL of the following garments together as one outfit, reproducing each reference image's color, material, pattern and details as faithfully as possible:\n` +
-    its.map((i, n) => `${n + 1}. ${i.name} (${i.category}${i.brand ? `, ${i.brand}` : ""}) — reference image ${n + 1}`).join("\n") +
-    `\nStyling: ${outfit.styling_tip}\n` +
-    (settings.profile ? `Person: ${settings.profile}\n` : "") +
-    `Do not add garments that are not listed (except plain inner basics if needed). Do not include any text or logos that are not on the garments.`;
-  const parts = [{ text: prompt }];
-  its.forEach((i) => parts.push({ inlineData: { mimeType: "image/jpeg", data: i.image.split(",")[1] } }));
-
-  const model = encodeURIComponent(settings.geminiModel);
-  let r;
-  try {
-    r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": settings.geminiKey },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts }],
-        generationConfig: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: "3:4" } },
-      }),
-    });
-  } catch {
-    throw new Error("Gemini에 연결하지 못했어요. 네트워크를 확인해 주세요.");
-  }
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) {
-    const msg = j.error?.message || "";
-    if (r.status === 400 && /API key/i.test(msg)) throw new Error("Gemini API 키가 올바르지 않아요.");
-    if (r.status === 429 || /quota/i.test(msg)) throw new Error("Gemini 사용 한도에 걸렸어요. 이미지 생성은 결제(유료 등급)가 등록된 키에서만 돼요.");
-    if (r.status === 404) throw new Error(`모델 '${settings.geminiModel}'을 찾을 수 없어요. 설정의 고급 → 모델 이름을 확인해 주세요.`);
-    throw new Error(`Gemini 오류 (${r.status}): ${msg}`);
-  }
-  const out = (j.candidates?.[0]?.content?.parts || []).find((p) => p.inlineData || p.inline_data);
-  const data = out?.inlineData || out?.inline_data;
-  if (!data) throw new Error("이미지가 생성되지 않았어요. 다시 시도해 주세요.");
-  return `data:${data.mimeType || data.mime_type || "image/png"};base64,${data.data}`;
-}
-
-function lookBlock(o, idx) {
-  return o.look
-    ? `<img class="look" src="${o.look}" alt="${esc(o.title)} 착용 이미지" />`
-    : `<button class="wide ghost-line" data-look="${idx}">AI로 입은 모습 그려보기${settings.geminiKey ? "" : " (무료)"}</button>`;
+/* ---------- 결과 화면: 코디 카드 좌우 스와이프 + 오늘 결과 유지 ---------- */
+const RESULT_KEY = "codi.lastResult";
+function saveResult() { lsSet(RESULT_KEY, { ...lastResult, savedOn: todayStr() }); }
+function restoreResult() {
+  const r = lsGet(RESULT_KEY, null);
+  if (!r || r.savedOn !== todayStr() || !Array.isArray(r.outfits)) return;
+  lastResult = r;
+  renderResult(r);
 }
 
 function renderResult(r) {
-  const outfits = r.outfits.map((o, idx) => `
-    <div class="card outfit">
-      <div class="rank">${idx === 0 ? "BEST PICK" : `OPTION ${idx + 1}`}</div>
-      <h3>${esc(o.title)}</h3>
-      ${lookbookHtml(o.item_ids)}
-      <div class="look-slot" id="look-${idx}">${lookBlock(o, idx)}</div>
-      <p>${esc(o.reason)}</p>
-      <p class="tip">${esc(o.styling_tip)}</p>
-      <button class="${idx === 0 ? "primary" : ""} wide" data-wear="${idx}">이걸로 입을게</button>
-    </div>`).join("");
+  const n = r.outfits.length;
+  const slides = r.outfits.map((o, idx) => {
+    const worn = r.wornIdx === idx;
+    return `
+    <div class="outfit-slide">
+      <div class="card outfit">
+        <div class="rank">${idx === 0 ? "BEST PICK" : `OPTION ${idx + 1}`}<span>${idx + 1} / ${n}</span></div>
+        <h3>${esc(o.title)}</h3>
+        ${lookbookHtml(o.item_ids)}
+        <p>${esc(o.reason)}</p>
+        <p class="tip">${esc(o.styling_tip)}</p>
+        <button class="${idx === 0 || worn ? "primary" : ""} wide" data-wear="${idx}" ${worn ? "disabled" : ""}>${worn ? "기록했어요 ✓" : "이걸로 입을게"}</button>
+      </div>
+    </div>`;
+  }).join("");
+  const dots = n > 1 ? `<div class="dots" role="tablist">${r.outfits.map((_, i) => `<button data-dot="${i}" class="${i === 0 ? "on" : ""}" aria-label="${i + 1}번째 코디"></button>`).join("")}</div>` : "";
   const missing = r.missing_items.length
     ? `<div class="card"><h3>있으면 좋은 아이템</h3><ul class="missing">${r.missing_items.map((m) => `<li><b>${esc(m.item)}</b> — ${esc(m.why)}</li>`).join("")}</ul></div>`
     : "";
   const trend = r.trend_notes ? `<div class="card"><h3>요즘 트렌드</h3><p>${esc(r.trend_notes)}</p></div>` : "";
-  $("#recommend-result").innerHTML = `<div class="card"><p class="advice">${esc(r.weather_advice)}</p></div>${outfits}${trend}${missing}`;
+  const meta = r.date ? `<div class="result-meta">${md(r.date)} (${dow(r.date)})${r.place ? ` · ${esc(r.place)}` : ""}${r.occasion ? ` · ${esc(r.occasion)}` : ""}</div>` : "";
+  $("#recommend-result").innerHTML =
+    `<div class="card">${meta}<p class="advice">${esc(r.weather_advice)}</p></div>` +
+    `<div class="outfit-track" id="outfit-track">${slides}</div>${dots}${trend}${missing}`;
+  bindCarousel();
+}
+
+function bindCarousel() {
+  const track = $("#outfit-track");
+  if (!track) return;
+  const dots = [...document.querySelectorAll("#recommend-result .dots button")];
+  const slides = [...track.querySelectorAll(".outfit-slide")];
+  const step = () => (slides[1] ? slides[1].offsetLeft - slides[0].offsetLeft : track.clientWidth);
+  const pageIdx = () => Math.round(track.scrollLeft / step());
+  let raf = 0;
+  track.addEventListener("scroll", () => {
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(() => { const i = pageIdx(); dots.forEach((d, k) => d.classList.toggle("on", k === i)); });
+  }, { passive: true });
+  dots.forEach((d) => d.addEventListener("click", () => track.scrollTo({ left: +d.dataset.dot * step(), behavior: "smooth" })));
 }
 
 $("#recommend-result").addEventListener("click", async (e) => {
-  const lb = e.target.closest("button[data-look]");
-  if (lb && lastResult) {
-    const idx = +lb.dataset.look;
-    const o = lastResult.outfits[idx];
-    const slot = $(`#look-${idx}`);
-    lb.disabled = true;
-    lb.textContent = settings.geminiKey ? "입은 모습 만드는 중… (10~30초)" : "무료로 그리는 중… (최대 1분)";
-    try {
-      o.look = await generateLook(o);
-      slot.innerHTML = lookBlock(o, idx);
-    } catch (err) {
-      console.error(err);
-      slot.innerHTML = `${lookBlock(o, idx)}<p class="status error">${esc(err.message)}</p>`;
-    }
-    return;
-  }
   const b = e.target.closest("button[data-wear]");
   if (!b || !lastResult) return;
-  const o = lastResult.outfits[+b.dataset.wear];
-  await db.put("history", { id: uid(), createdAt: Date.now(), date: lastResult.date, occasion: lastResult.occasion, place: lastResult.place, title: o.title, item_ids: o.item_ids, look: o.look || null });
+  const idx = +b.dataset.wear;
+  const o = lastResult.outfits[idx];
+  lastResult.wornIdx = idx;
+  saveResult();
+  await db.put("history", { id: uid(), createdAt: Date.now(), date: lastResult.date, occasion: lastResult.occasion, place: lastResult.place, title: o.title, item_ids: o.item_ids });
   b.textContent = "기록했어요 ✓";
   b.disabled = true;
+  b.classList.add("primary");
   renderHistory();
 });
 
@@ -867,7 +791,6 @@ async function renderHistory() {
     <div class="card history-entry">
       <div class="row"><span class="date grow">${md(h.date)} (${dow(h.date)}) · ${esc(h.occasion)}${h.place ? ` · ${esc(h.place)}` : ""}</span><button class="ghost danger" data-del="${h.id}">삭제</button></div>
       <h3>${esc(h.title)}</h3>
-      ${h.look ? `<img class="look" src="${h.look}" alt="" />` : ""}
       ${lookbookHtml(h.item_ids)}
     </div>`).join("");
   $("#history-empty").style.display = hist.length ? "none" : "block";
@@ -886,16 +809,7 @@ function fillSettings() {
   $("#profile-note").value = settings.profile;
   $("#use-gps").checked = settings.useGps;
   $("#home-city").value = settings.homeCity.name;
-  $("#gemini-key").value = settings.geminiKey;
-  $("#gemini-model").value = lsGet("codi.geminiModel", "");
-  document.querySelectorAll("#look-style-seg button").forEach((b) => b.classList.toggle("on", b.dataset.style === settings.lookStyle));
 }
-$("#look-style-seg").addEventListener("click", (e) => {
-  const b = e.target.closest("button[data-style]");
-  if (!b) return;
-  settings.lookStyle = b.dataset.style;
-  document.querySelectorAll("#look-style-seg button").forEach((x) => x.classList.toggle("on", x === b));
-});
 async function searchHome() {
   const q = $("#home-city").value.trim();
   if (!q) return;
@@ -911,8 +825,6 @@ $("#home-city").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.
 $("#save-settings").addEventListener("click", () => {
   settings.key = $("#api-key").value.trim();
   settings.profile = $("#profile-note").value.trim();
-  settings.geminiKey = $("#gemini-key").value.trim();
-  settings.geminiModel = $("#gemini-model").value.trim();
   const gpsChanged = settings.useGps !== $("#use-gps").checked;
   settings.useGps = $("#use-gps").checked;
   if (pendingHome) { settings.homeCity = pendingHome; pendingHome = null; }
@@ -961,7 +873,7 @@ document.querySelector(".tabs").addEventListener("click", (e) => {
 
 fillSettings();
 renderDayChips();
-refreshItems();
+refreshItems().then(restoreResult);
 renderHistory();
 refreshTrips();
 if (!settings.key) showTab("settings");
